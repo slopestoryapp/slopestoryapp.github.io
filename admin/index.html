@@ -2,6 +2,9 @@
 <html>
 <head>
   <title>Slopestory Admin Tools</title>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
     body { font-family: -apple-system, system-ui, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; }
     h1 { color: #1e3a5f; font-size: 24px; margin-bottom: 8px; }
@@ -14,6 +17,8 @@
     .btn-secondary { background: #1e3a5f; }
     .btn-secondary:hover { background: #162d4a; }
     .btn-small { width: auto; padding: 10px 20px; font-size: 14px; }
+    .btn-danger { background: #dc2626; }
+    .btn-danger:hover { background: #b91c1c; }
     .result { margin-top: 20px; padding: 16px; background: #f0f9ff; border-radius: 8px; word-break: break-all; }
     .result.error { background: #fef2f2; color: #dc2626; }
     .result.success { background: #f0fdf4; color: #166534; }
@@ -62,30 +67,94 @@
       opacity: 1;
       transform: scale(1);
     }
+
+    /* Auth styles */
+    .auth-container {
+      min-height: 80vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+    }
+    .auth-container .logo { font-size: 64px; margin-bottom: 16px; }
+    .auth-container h1 { margin-bottom: 8px; }
+    .auth-container p { color: #64748b; margin-bottom: 24px; }
+    .auth-box { background: #f8fafc; border-radius: 12px; padding: 24px; width: 100%; max-width: 360px; }
+    .auth-box input { margin-bottom: 8px; }
+    .auth-error { color: #dc2626; font-size: 14px; margin-top: 12px; }
+    .auth-loading { color: #64748b; font-size: 14px; margin-top: 12px; }
+    .divider { display: flex; align-items: center; margin: 20px 0; color: #94a3b8; font-size: 14px; }
+    .divider::before, .divider::after { content: ''; flex: 1; border-bottom: 1px solid #e2e8f0; }
+    .divider span { padding: 0 12px; }
+
+    /* Header with logout */
+    .admin-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+    .admin-header h1 { margin: 0; }
+    .user-info { display: flex; align-items: center; gap: 12px; }
+    .user-email { color: #64748b; font-size: 14px; }
+
+    /* Hidden by default */
+    #adminContent { display: none; }
+    #authScreen { display: none; }
+    #loadingScreen { display: block; text-align: center; padding: 100px 20px; color: #64748b; }
   </style>
 </head>
 <body>
-  <h1>🏔️ Slopestory Admin Tools</h1>
-
-  <!-- Workflow Section -->
-  <div class="workflow">
-    <div class="workflow-title">📋 Processing Workflow</div>
-    <ol>
-      <li>Check <strong>submission_review</strong> view for new submissions & duplicates</li>
-      <li>Copy Research Prompt → paste to Claude → get JSON</li>
-      <li>Check submitted image quality in Storage → submissions bucket</li>
-      <li>Process Image below → get WebP URL for cover_image_url</li>
-      <li>Ask Claude Code to verify JSON + generate INSERT SQL</li>
-      <li>Run SQL in Supabase, quick app check</li>
-      <li class="auto">✅ Approve: Change status → <strong>approved</strong> (user gets email)</li>
-      <li class="manual">❌ Reject: Change status → <strong>rejected</strong> (no email sent)</li>
-    </ol>
+  <!-- Loading Screen -->
+  <div id="loadingScreen">
+    <div style="font-size: 48px; margin-bottom: 16px;">🏔️</div>
+    <p>Loading...</p>
   </div>
 
-  <!-- Research Prompt Section -->
-  <h2>📝 Research Prompt</h2>
+  <!-- Auth Screen -->
+  <div id="authScreen" class="auth-container">
+    <div class="logo">🏔️</div>
+    <h1>Slopestory Admin</h1>
+    <p>Sign in to access admin tools</p>
 
-  <div class="prompt-box" id="promptTemplate">
+    <div class="auth-box">
+      <input type="email" id="authEmail" placeholder="Email address">
+      <input type="password" id="authPassword" placeholder="Password">
+      <button onclick="signIn()">Sign In</button>
+      <div id="authError" class="auth-error" style="display: none;"></div>
+      <div id="authLoading" class="auth-loading" style="display: none;">Signing in...</div>
+
+      <div class="divider"><span>or</span></div>
+
+      <button class="btn-secondary" onclick="signInWithGoogle()">Continue with Google</button>
+    </div>
+  </div>
+
+  <!-- Admin Content (protected) -->
+  <div id="adminContent">
+    <div class="admin-header">
+      <h1>🏔️ Slopestory Admin Tools</h1>
+      <div class="user-info">
+        <span class="user-email" id="userEmail"></span>
+        <button class="btn-small btn-danger" onclick="signOut()">Sign Out</button>
+      </div>
+    </div>
+
+    <!-- Workflow Section -->
+    <div class="workflow">
+      <div class="workflow-title">📋 Processing Workflow</div>
+      <ol>
+        <li>Check <strong>submission_review</strong> view for new submissions & duplicates</li>
+        <li>Copy Research Prompt → paste to Claude → get JSON</li>
+        <li>Check submitted image quality in Storage → submissions bucket</li>
+        <li>Process Image below → get WebP URL for cover_image_url</li>
+        <li>Ask Claude Code to verify JSON + generate INSERT SQL</li>
+        <li>Run SQL in Supabase, quick app check</li>
+        <li class="auto">✅ Approve: Change status → <strong>approved</strong> (user gets email)</li>
+        <li class="manual">❌ Reject: Change status → <strong>rejected</strong> (no email sent)</li>
+      </ol>
+    </div>
+
+    <!-- Research Prompt Section -->
+    <h2>📝 Research Prompt</h2>
+
+    <div class="prompt-box" id="promptTemplate">
 <h3>Research Request</h3>
 Research the following ski resort and provide accurate, verified data:
 
@@ -159,31 +228,150 @@ Return as a JSON object ready for database insertion:
 - If conflicting data exists, prefer the resort's official website
 - For terrain percentages, round to whole numbers and ensure they total 100%
 - Only include pass affiliations for major multi-resort passes
+    </div>
+
+    <div class="copy-area">
+      <button class="btn-secondary btn-small" id="copyPromptBtn" onclick="copyPrompt()">📋 Copy Prompt</button>
+      <span class="copy-checkmark" id="copyCheck">✓ Copied!</span>
+    </div>
+
+    <!-- Image Processing Section -->
+    <h2>🖼️ Process Image</h2>
+
+    <label>Submission ID <span style="color:#94a3b8">(optional)</span></label>
+    <input type="text" id="submissionId" placeholder="e.g., a1b2c3d4-...">
+    <p class="hint">Leave empty to use Photo URL instead</p>
+
+    <label>Photo URL <span style="color:#94a3b8">(if no Submission ID)</span></label>
+    <input type="text" id="photoUrl" placeholder="https://...">
+
+    <label>Resort Name <span style="color:#dc2626">*</span></label>
+    <input type="text" id="resortName" placeholder="e.g., Kicking Horse">
+    <p class="hint">Use the official name from Claude's JSON — becomes the image filename</p>
+
+    <button id="processBtn" onclick="processImage()">Process Image</button>
+    <div id="result"></div>
   </div>
-
-  <div class="copy-area">
-    <button class="btn-secondary btn-small" id="copyPromptBtn" onclick="copyPrompt()">📋 Copy Prompt</button>
-    <span class="copy-checkmark" id="copyCheck">✓ Copied!</span>
-  </div>
-
-  <!-- Image Processing Section -->
-  <h2>🖼️ Process Image</h2>
-
-  <label>Submission ID <span style="color:#94a3b8">(optional)</span></label>
-  <input type="text" id="submissionId" placeholder="e.g., a1b2c3d4-...">
-  <p class="hint">Leave empty to use Photo URL instead</p>
-
-  <label>Photo URL <span style="color:#94a3b8">(if no Submission ID)</span></label>
-  <input type="text" id="photoUrl" placeholder="https://...">
-
-  <label>Resort Name <span style="color:#dc2626">*</span></label>
-  <input type="text" id="resortName" placeholder="e.g., Kicking Horse">
-  <p class="hint">Use the official name from Claude's JSON — becomes the image filename</p>
-
-  <button id="processBtn" onclick="processImage()">Process Image</button>
-  <div id="result"></div>
 
   <script>
+    // Supabase config
+    const SUPABASE_URL = 'https://rnudbfdhrenesamdjzdk.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJudWRiZmRocmVuZXNhbWRqemRrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg2MjEwNTIsImV4cCI6MjA4NDE5NzA1Mn0.oxSYGKF5jkiTCWZblioMxYnKK8d-NGQkp5incBTYi3E';
+
+    // Admin whitelist - only these emails can access
+    const ADMIN_EMAILS = [
+      'slopestoryapp@gmail.com'
+    ];
+
+    // Initialize Supabase
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    // Check auth state on load
+    async function checkAuth() {
+      const { data: { session } } = await supabase.auth.getSession();
+
+      if (session && ADMIN_EMAILS.includes(session.user.email.toLowerCase())) {
+        showAdminContent(session.user.email);
+      } else if (session) {
+        // Logged in but not authorized
+        await supabase.auth.signOut();
+        showAuthScreen('Access denied. This account is not authorized for admin access.');
+      } else {
+        showAuthScreen();
+      }
+    }
+
+    function showAdminContent(email) {
+      document.getElementById('loadingScreen').style.display = 'none';
+      document.getElementById('authScreen').style.display = 'none';
+      document.getElementById('adminContent').style.display = 'block';
+      document.getElementById('userEmail').textContent = email;
+    }
+
+    function showAuthScreen(error = null) {
+      document.getElementById('loadingScreen').style.display = 'none';
+      document.getElementById('authScreen').style.display = 'flex';
+      document.getElementById('adminContent').style.display = 'none';
+
+      if (error) {
+        document.getElementById('authError').textContent = error;
+        document.getElementById('authError').style.display = 'block';
+      }
+    }
+
+    async function signIn() {
+      const email = document.getElementById('authEmail').value.trim();
+      const password = document.getElementById('authPassword').value;
+
+      if (!email || !password) {
+        document.getElementById('authError').textContent = 'Please enter email and password';
+        document.getElementById('authError').style.display = 'block';
+        return;
+      }
+
+      // Check whitelist before attempting login
+      if (!ADMIN_EMAILS.includes(email.toLowerCase())) {
+        document.getElementById('authError').textContent = 'Access denied. This email is not authorized for admin access.';
+        document.getElementById('authError').style.display = 'block';
+        return;
+      }
+
+      document.getElementById('authError').style.display = 'none';
+      document.getElementById('authLoading').style.display = 'block';
+
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+
+      document.getElementById('authLoading').style.display = 'none';
+
+      if (error) {
+        document.getElementById('authError').textContent = error.message;
+        document.getElementById('authError').style.display = 'block';
+      } else {
+        showAdminContent(data.user.email);
+      }
+    }
+
+    async function signInWithGoogle() {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: window.location.href
+        }
+      });
+
+      if (error) {
+        document.getElementById('authError').textContent = error.message;
+        document.getElementById('authError').style.display = 'block';
+      }
+    }
+
+    async function signOut() {
+      await supabase.auth.signOut();
+      showAuthScreen();
+    }
+
+    // Listen for auth changes (handles OAuth redirect)
+    supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_IN' && session) {
+        if (ADMIN_EMAILS.includes(session.user.email.toLowerCase())) {
+          showAdminContent(session.user.email);
+        } else {
+          supabase.auth.signOut();
+          showAuthScreen('Access denied. This account is not authorized for admin access.');
+        }
+      }
+    });
+
+    // Initialize
+    checkAuth();
+
+    // Allow Enter key to submit
+    document.getElementById('authPassword').addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') signIn();
+    });
+
+    // ============ Original Admin Functions ============
+
     function getPromptText() {
       const resortName = document.getElementById('resortNameInput').value || '[RESORT NAME]';
       const country = document.getElementById('countryInput').value || '[COUNTRY]';
@@ -271,7 +459,6 @@ Return as a JSON object ready for database insertion:
       const btn = document.getElementById('copyPromptBtn');
       const check = document.getElementById('copyCheck');
 
-      // Try clipboard API with fallback
       const textarea = document.createElement('textarea');
       textarea.value = prompt;
       textarea.style.position = 'fixed';
@@ -281,19 +468,10 @@ Return as a JSON object ready for database insertion:
 
       try {
         document.execCommand('copy');
-
-        // Success animation
         btn.classList.add('copy-success');
         check.classList.add('show');
-
-        setTimeout(() => {
-          btn.classList.remove('copy-success');
-        }, 400);
-
-        setTimeout(() => {
-          check.classList.remove('show');
-        }, 2000);
-
+        setTimeout(() => btn.classList.remove('copy-success'), 400);
+        setTimeout(() => check.classList.remove('show'), 2000);
       } catch (e) {
         alert('Copy failed - please select the text manually');
       }
@@ -348,10 +526,13 @@ Return as a JSON object ready for database insertion:
         if (submissionId) body.submission_id = submissionId;
         else body.photo_url = photoUrl;
 
-        const response = await fetch('https://rnudbfdhrenesamdjzdk.supabase.co/functions/v1/process-resort-image', {
+        // Get current session for auth token
+        const { data: { session } } = await supabase.auth.getSession();
+
+        const response = await fetch(SUPABASE_URL + '/functions/v1/process-resort-image', {
           method: 'POST',
           headers: {
-            'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJudWRiZmRocmVuZXNhbWRqemRrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg2MjEwNTIsImV4cCI6MjA4NDE5NzA1Mn0.oxSYGKF5jkiTCWZblioMxYnKK8d-NGQkp5incBTYi3E',
+            'Authorization': 'Bearer ' + (session?.access_token || SUPABASE_ANON_KEY),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify(body)
