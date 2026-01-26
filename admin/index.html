@@ -1,281 +1,860 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>Slopestory Admin Tools</title>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Dashboard - SlopeStory</title>
+  <link rel="icon" type="image/png" href="https://rnudbfdhrenesamdjzdk.supabase.co/storage/v1/object/public/brand-assets/logo-light.png">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
-    body { font-family: -apple-system, system-ui, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; }
-    h1 { color: #1e3a5f; font-size: 24px; margin-bottom: 8px; }
-    h2 { color: #64748b; font-size: 16px; font-weight: 500; margin-top: 32px; margin-bottom: 16px; padding-top: 24px; border-top: 1px solid #e2e8f0; }
-    label { display: block; margin-top: 16px; color: #64748b; font-size: 14px; }
-    input { width: 100%; padding: 12px; margin-top: 6px; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 16px; box-sizing: border-box; }
-    button { width: 100%; padding: 14px; margin-top: 16px; background: #4298D2; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; }
-    button:hover { background: #3a87be; }
-    button:disabled { background: #94a3b8; cursor: not-allowed; }
-    .btn-secondary { background: #1e3a5f; }
-    .btn-secondary:hover { background: #162d4a; }
-    .btn-small { width: auto; padding: 10px 20px; font-size: 14px; }
-    .btn-danger { background: #dc2626; }
-    .btn-danger:hover { background: #b91c1c; }
-    .result { margin-top: 20px; padding: 16px; background: #f0f9ff; border-radius: 8px; word-break: break-all; }
-    .result.error { background: #fef2f2; color: #dc2626; }
-    .result.success { background: #f0fdf4; color: #166534; }
-    .url-box { margin-top: 12px; padding: 10px; background: white; border: 1px solid #e2e8f0; border-radius: 6px; font-family: monospace; font-size: 13px; }
-    .copy-btn { width: auto; padding: 8px 16px; margin-top: 10px; }
-    .hint { color: #94a3b8; font-size: 12px; margin-top: 4px; }
-    .workflow { background: #f8fafc; border-radius: 12px; padding: 20px; margin-bottom: 8px; }
-    .workflow ol { margin: 0; padding-left: 24px; }
-    .workflow li { padding: 8px 0; color: #334155; font-size: 14px; }
-    .workflow li.auto { color: #166534; font-weight: 500; }
-    .workflow li.manual { color: #dc2626; }
-    .workflow-title { font-size: 14px; font-weight: 600; color: #1e3a5f; margin-bottom: 12px; }
-
-    /* Prompt template styles */
-    .prompt-box { background: #1e293b; color: #e2e8f0; border-radius: 12px; padding: 20px; font-family: 'SF Mono', Monaco, 'Courier New', monospace; font-size: 13px; line-height: 1.6; white-space: pre-wrap; margin-top: 16px; }
-    .prompt-box h3 { color: #4298D2; font-size: 13px; margin: 20px 0 8px; font-family: -apple-system, system-ui, sans-serif; }
-    .prompt-box h3:first-child { margin-top: 0; }
-    .prompt-box ul { margin: 8px 0; padding-left: 20px; }
-    .prompt-box .editable { background: #4298D2; color: white; padding: 2px 8px; border-radius: 4px; border: none; font-family: inherit; font-size: inherit; min-width: 120px; }
-    .prompt-box .editable:focus { outline: 2px solid #6DB5DE; }
-    .prompt-box .json-block { background: #0f172a; padding: 12px; border-radius: 6px; margin: 12px 0; }
-
-    /* Copy button area */
-    .copy-area { display: flex; align-items: center; gap: 12px; margin-top: 16px; }
-    .copy-area button { margin: 0; }
-
-    /* Copy animation */
-    @keyframes copyPulse {
-      0% { transform: scale(1); }
-      50% { transform: scale(1.05); background: #166534; }
-      100% { transform: scale(1); }
-    }
-    .copy-success {
-      animation: copyPulse 0.4s ease-out;
-    }
-    .copy-checkmark {
-      display: inline-block;
-      opacity: 0;
-      transform: scale(0);
-      transition: all 0.3s ease;
-      color: #166534;
-      font-size: 18px;
-      font-weight: bold;
-    }
-    .copy-checkmark.show {
-      opacity: 1;
-      transform: scale(1);
+    :root {
+      --primary: #4298D2;
+      --primary-light: #6DB5DE;
+      --primary-dark: #3a87be;
+      --slate-light: #35506A;
+      --slate-mid: #213A50;
+      --slate-dark: #101E2A;
+      --slate-darker: #0a1219;
+      --surface: #1a2d3d;
+      --surface-hover: #243a4d;
+      --border: #2d4356;
+      --text-primary: #ffffff;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      --success: #22c55e;
+      --success-bg: rgba(34, 197, 94, 0.1);
+      --warning: #f59e0b;
+      --warning-bg: rgba(245, 158, 11, 0.1);
+      --error: #ef4444;
+      --error-bg: rgba(239, 68, 68, 0.1);
     }
 
-    /* Auth styles */
-    .auth-container {
-      min-height: 80vh;
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--slate-darker);
+      color: var(--text-primary);
+      min-height: 100vh;
+    }
+
+    /* Loading & Auth Screens */
+    .screen-center {
+      min-height: 100vh;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      text-align: center;
+      background: linear-gradient(135deg, var(--slate-dark) 0%, var(--slate-darker) 100%);
     }
-    .auth-container .logo { font-size: 64px; margin-bottom: 16px; }
-    .auth-container h1 { margin-bottom: 8px; }
-    .auth-container p { color: #64748b; margin-bottom: 24px; }
-    .auth-box { background: #f8fafc; border-radius: 12px; padding: 24px; width: 100%; max-width: 360px; }
-    .auth-box input { margin-bottom: 8px; }
-    .auth-error { color: #dc2626; font-size: 14px; margin-top: 12px; }
-    .auth-loading { color: #64748b; font-size: 14px; margin-top: 12px; }
-    .divider { display: flex; align-items: center; margin: 20px 0; color: #94a3b8; font-size: 14px; }
-    .divider::before, .divider::after { content: ''; flex: 1; border-bottom: 1px solid #e2e8f0; }
-    .divider span { padding: 0 12px; }
 
-    /* Header with logout */
-    .admin-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
-    .admin-header h1 { margin: 0; }
-    .user-info { display: flex; align-items: center; gap: 12px; }
-    .user-email { color: #64748b; font-size: 14px; }
+    .auth-logo { height: 48px; margin-bottom: 24px; }
+    .auth-title { font-size: 24px; font-weight: 600; margin-bottom: 8px; }
+    .auth-subtitle { color: var(--text-secondary); margin-bottom: 32px; }
 
-    /* Hidden by default */
-    #adminContent { display: none; }
-    #authScreen { display: none; }
-    #loadingScreen { display: block; text-align: center; padding: 100px 20px; color: #64748b; }
+    .auth-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 32px;
+      width: 100%;
+      max-width: 380px;
+    }
+
+    .auth-box input {
+      width: 100%;
+      padding: 14px 16px;
+      background: var(--slate-dark);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      color: var(--text-primary);
+      font-size: 15px;
+      margin-bottom: 12px;
+      transition: border-color 0.2s;
+    }
+
+    .auth-box input:focus {
+      outline: none;
+      border-color: var(--primary);
+    }
+
+    .auth-box input::placeholder { color: var(--text-muted); }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 14px 24px;
+      background: var(--primary);
+      color: white;
+      border: none;
+      border-radius: 10px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      width: 100%;
+    }
+
+    .btn:hover { background: var(--primary-dark); }
+    .btn:disabled { background: var(--text-muted); cursor: not-allowed; }
+    .btn-secondary { background: var(--surface); border: 1px solid var(--border); }
+    .btn-secondary:hover { background: var(--surface-hover); }
+    .btn-success { background: var(--success); }
+    .btn-success:hover { background: #16a34a; }
+    .btn-danger { background: var(--error); }
+    .btn-danger:hover { background: #dc2626; }
+    .btn-sm { padding: 10px 16px; font-size: 13px; width: auto; }
+    .btn-icon { padding: 10px; width: auto; }
+
+    .auth-error {
+      background: var(--error-bg);
+      color: var(--error);
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-size: 14px;
+      margin-top: 12px;
+      display: none;
+    }
+
+    /* Dashboard Layout */
+    .dashboard { display: flex; min-height: 100vh; }
+
+    /* Sidebar */
+    .sidebar {
+      width: 260px;
+      background: var(--slate-dark);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      position: fixed;
+      height: 100vh;
+      z-index: 100;
+    }
+
+    .sidebar-header {
+      padding: 20px 24px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .sidebar-logo { height: 32px; }
+    .sidebar-title { font-size: 18px; font-weight: 600; }
+    .sidebar-badge {
+      background: var(--primary);
+      color: white;
+      font-size: 10px;
+      font-weight: 600;
+      padding: 3px 8px;
+      border-radius: 4px;
+      margin-left: auto;
+    }
+
+    .sidebar-nav { flex: 1; padding: 16px 12px; }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 16px;
+      color: var(--text-secondary);
+      text-decoration: none;
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 500;
+      transition: all 0.2s;
+      cursor: pointer;
+      margin-bottom: 4px;
+    }
+
+    .nav-item:hover { background: var(--surface); color: var(--text-primary); }
+    .nav-item.active { background: var(--primary); color: white; }
+    .nav-item svg { width: 20px; height: 20px; opacity: 0.8; }
+    .nav-item.active svg { opacity: 1; }
+
+    .nav-badge {
+      margin-left: auto;
+      background: var(--error);
+      color: white;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 10px;
+    }
+
+    .sidebar-footer {
+      padding: 16px;
+      border-top: 1px solid var(--border);
+    }
+
+    .user-info {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px;
+      background: var(--surface);
+      border-radius: 10px;
+    }
+
+    .user-avatar {
+      width: 36px;
+      height: 36px;
+      background: var(--primary);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 600;
+      font-size: 14px;
+    }
+
+    .user-details { flex: 1; min-width: 0; }
+    .user-name { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .user-role { font-size: 11px; color: var(--text-muted); }
+
+    .btn-logout {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      padding: 8px;
+      border-radius: 6px;
+      transition: all 0.2s;
+    }
+
+    .btn-logout:hover { background: var(--error-bg); color: var(--error); }
+
+    /* Main Content */
+    .main { flex: 1; margin-left: 260px; }
+
+    .main-header {
+      background: var(--slate-dark);
+      border-bottom: 1px solid var(--border);
+      padding: 20px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 50;
+    }
+
+    .page-title { font-size: 20px; font-weight: 600; }
+    .page-subtitle { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
+
+    .main-content { padding: 32px; }
+
+    /* Cards */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      overflow: hidden;
+    }
+
+    .card-header {
+      padding: 20px 24px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .card-title {
+      font-size: 16px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .card-title svg { width: 20px; height: 20px; color: var(--primary); }
+    .card-body { padding: 24px; }
+    .card-body-flush { padding: 0; }
+
+    /* Grid */
+    .grid { display: grid; gap: 24px; }
+    .grid-2 { grid-template-columns: repeat(2, 1fr); }
+    .grid-3 { grid-template-columns: repeat(3, 1fr); }
+
+    @media (max-width: 1200px) {
+      .grid-2, .grid-3 { grid-template-columns: 1fr; }
+    }
+
+    /* Stats */
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+    }
+
+    .stat-label { font-size: 13px; color: var(--text-muted); margin-bottom: 8px; }
+    .stat-value { font-size: 28px; font-weight: 700; }
+    .stat-change { font-size: 12px; color: var(--success); margin-top: 4px; }
+
+    /* Submissions List */
+    .submission-list { max-height: 400px; overflow-y: auto; }
+
+    .submission-item {
+      padding: 16px 24px;
+      border-bottom: 1px solid var(--border);
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .submission-item:last-child { border-bottom: none; }
+    .submission-item:hover { background: var(--surface-hover); }
+    .submission-item.active { background: var(--primary); background: rgba(66, 152, 210, 0.15); border-left: 3px solid var(--primary); }
+
+    .submission-name { font-weight: 600; margin-bottom: 4px; }
+    .submission-meta { font-size: 13px; color: var(--text-muted); display: flex; gap: 16px; }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .status-pending { background: var(--warning-bg); color: var(--warning); }
+    .status-approved { background: var(--success-bg); color: var(--success); }
+    .status-rejected { background: var(--error-bg); color: var(--error); }
+
+    /* Empty State */
+    .empty-state {
+      text-align: center;
+      padding: 48px 24px;
+      color: var(--text-muted);
+    }
+
+    .empty-state svg { width: 48px; height: 48px; margin-bottom: 16px; opacity: 0.5; }
+    .empty-state p { font-size: 14px; }
+
+    /* Form Elements */
+    .form-group { margin-bottom: 20px; }
+
+    .form-label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      margin-bottom: 8px;
+    }
+
+    .form-label span { color: var(--error); }
+
+    .form-input, .form-select {
+      width: 100%;
+      padding: 12px 16px;
+      background: var(--slate-dark);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      color: var(--text-primary);
+      font-size: 14px;
+      transition: border-color 0.2s;
+    }
+
+    .form-input:focus, .form-select:focus {
+      outline: none;
+      border-color: var(--primary);
+    }
+
+    .form-input::placeholder { color: var(--text-muted); }
+    .form-hint { font-size: 12px; color: var(--text-muted); margin-top: 6px; }
+
+    /* Research Prompt */
+    .prompt-display {
+      background: var(--slate-darker);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      font-family: 'SF Mono', Monaco, 'Consolas', monospace;
+      font-size: 13px;
+      line-height: 1.7;
+      color: var(--text-secondary);
+      max-height: 300px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+    }
+
+    .prompt-display strong { color: var(--primary-light); }
+
+    .copy-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      color: var(--success);
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+
+    .copy-status.show { opacity: 1; }
+
+    /* Process Result */
+    .result-box {
+      padding: 16px 20px;
+      border-radius: 10px;
+      margin-top: 16px;
+    }
+
+    .result-box.success { background: var(--success-bg); border: 1px solid var(--success); }
+    .result-box.error { background: var(--error-bg); border: 1px solid var(--error); }
+
+    .result-url {
+      background: var(--slate-darker);
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-family: monospace;
+      font-size: 13px;
+      margin-top: 12px;
+      word-break: break-all;
+    }
+
+    /* Workflow Steps */
+    .workflow-steps { display: flex; flex-direction: column; gap: 12px; }
+
+    .workflow-step {
+      display: flex;
+      align-items: flex-start;
+      gap: 16px;
+      padding: 16px;
+      background: var(--slate-dark);
+      border-radius: 10px;
+      transition: all 0.2s;
+    }
+
+    .workflow-step:hover { background: var(--surface-hover); }
+
+    .step-number {
+      width: 28px;
+      height: 28px;
+      background: var(--border);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      font-weight: 600;
+      flex-shrink: 0;
+    }
+
+    .step-number.active { background: var(--primary); }
+    .step-number.complete { background: var(--success); }
+
+    .step-content { flex: 1; }
+    .step-title { font-weight: 500; margin-bottom: 4px; }
+    .step-desc { font-size: 13px; color: var(--text-muted); }
+
+    /* Action Buttons Row */
+    .action-row {
+      display: flex;
+      gap: 12px;
+      margin-top: 24px;
+      padding-top: 24px;
+      border-top: 1px solid var(--border);
+    }
+
+    /* Tabs */
+    .tabs {
+      display: flex;
+      gap: 4px;
+      padding: 4px;
+      background: var(--slate-dark);
+      border-radius: 10px;
+      margin-bottom: 24px;
+    }
+
+    .tab {
+      flex: 1;
+      padding: 10px 16px;
+      background: transparent;
+      border: none;
+      border-radius: 8px;
+      color: var(--text-muted);
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .tab:hover { color: var(--text-primary); }
+    .tab.active { background: var(--primary); color: white; }
+
+    /* Submission Details Panel */
+    .detail-panel {
+      background: var(--slate-dark);
+      border-radius: 12px;
+      padding: 24px;
+    }
+
+    .detail-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      margin-bottom: 24px;
+    }
+
+    .detail-title { font-size: 20px; font-weight: 600; margin-bottom: 4px; }
+    .detail-subtitle { color: var(--text-muted); font-size: 14px; }
+
+    .detail-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 16px;
+    }
+
+    .detail-item label {
+      font-size: 12px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .detail-item p {
+      font-size: 15px;
+      margin-top: 4px;
+    }
+
+    .detail-image {
+      margin-top: 24px;
+      border-radius: 12px;
+      overflow: hidden;
+      background: var(--slate-darker);
+    }
+
+    .detail-image img {
+      width: 100%;
+      height: 200px;
+      object-fit: cover;
+    }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: var(--slate-dark); }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+    /* Hide elements */
+    .hidden { display: none !important; }
+
+    /* Loading spinner */
+    .spinner {
+      width: 20px;
+      height: 20px;
+      border: 2px solid var(--border);
+      border-top-color: var(--primary);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* Refresh button */
+    .btn-refresh {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-secondary);
+      padding: 8px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+    }
+
+    .btn-refresh:hover {
+      border-color: var(--primary);
+      color: var(--primary);
+    }
+
+    .btn-refresh svg {
+      width: 16px;
+      height: 16px;
+    }
+
+    .btn-refresh.loading svg {
+      animation: spin 0.8s linear infinite;
+    }
   </style>
 </head>
 <body>
   <!-- Loading Screen -->
-  <div id="loadingScreen">
-    <div style="font-size: 48px; margin-bottom: 16px;">🏔️</div>
-    <p>Loading...</p>
+  <div id="loadingScreen" class="screen-center">
+    <img src="https://rnudbfdhrenesamdjzdk.supabase.co/storage/v1/object/public/brand-assets/logo-light.png" alt="SlopeStory" class="auth-logo">
+    <div class="spinner"></div>
   </div>
 
   <!-- Auth Screen -->
-  <div id="authScreen" class="auth-container">
-    <div class="logo">🏔️</div>
-    <h1>Slopestory Admin</h1>
-    <p>Sign in to access admin tools</p>
-
+  <div id="authScreen" class="screen-center hidden">
+    <img src="https://rnudbfdhrenesamdjzdk.supabase.co/storage/v1/object/public/brand-assets/logo-light.png" alt="SlopeStory" class="auth-logo">
+    <h1 class="auth-title">Admin Dashboard</h1>
+    <p class="auth-subtitle">Sign in to manage SlopeStory</p>
     <div class="auth-box">
       <input type="email" id="authEmail" placeholder="Email address">
       <input type="password" id="authPassword" placeholder="Password">
-      <button onclick="signIn()">Sign In</button>
-      <div id="authError" class="auth-error" style="display: none;"></div>
-      <div id="authLoading" class="auth-loading" style="display: none;">Signing in...</div>
+      <button class="btn" onclick="signIn()">Sign In</button>
+      <div id="authError" class="auth-error"></div>
     </div>
   </div>
 
-  <!-- Admin Content (protected) -->
-  <div id="adminContent">
-    <div class="admin-header">
-      <h1>🏔️ Slopestory Admin Tools</h1>
-      <div class="user-info">
-        <span class="user-email" id="userEmail"></span>
-        <button class="btn-small btn-danger" onclick="signOut()">Sign Out</button>
+  <!-- Dashboard -->
+  <div id="dashboard" class="dashboard hidden">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <img src="https://rnudbfdhrenesamdjzdk.supabase.co/storage/v1/object/public/brand-assets/logo-light.png" alt="" class="sidebar-logo">
+        <span class="sidebar-title">SlopeStory</span>
+        <span class="sidebar-badge">ADMIN</span>
       </div>
-    </div>
 
-    <!-- Workflow Section -->
-    <div class="workflow">
-      <div class="workflow-title">📋 Processing Workflow</div>
-      <ol>
-        <li>Check <strong>submission_review</strong> view for new submissions & duplicates</li>
-        <li>Copy Research Prompt → paste to Claude → get JSON</li>
-        <li>Check submitted image quality in Storage → submissions bucket</li>
-        <li>Process Image below → get WebP URL for cover_image_url</li>
-        <li>Ask Claude Code to verify JSON + generate INSERT SQL</li>
-        <li>Run SQL in Supabase, quick app check</li>
-        <li class="auto">✅ Approve: Change status → <strong>approved</strong> (user gets email)</li>
-        <li class="manual">❌ Reject: Change status → <strong>rejected</strong> (no email sent)</li>
-      </ol>
-    </div>
+      <nav class="sidebar-nav">
+        <a class="nav-item active" data-page="submissions">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
+          Resort Submissions
+          <span class="nav-badge" id="pendingCount">0</span>
+        </a>
+        <a class="nav-item" data-page="resorts">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+          Resorts
+        </a>
+        <a class="nav-item" data-page="users">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+          Users
+        </a>
+      </nav>
 
-    <!-- Research Prompt Section -->
-    <h2>📝 Research Prompt</h2>
+      <div class="sidebar-footer">
+        <div class="user-info">
+          <div class="user-avatar" id="userAvatar">A</div>
+          <div class="user-details">
+            <div class="user-name" id="userEmail">admin@slopestory.com</div>
+            <div class="user-role">Administrator</div>
+          </div>
+          <button class="btn-logout" onclick="signOut()" title="Sign out">
+            <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+          </button>
+        </div>
+      </div>
+    </aside>
 
-    <div class="prompt-box" id="promptTemplate">
-<h3>Research Request</h3>
-Research the following ski resort and provide accurate, verified data:
+    <!-- Main Content -->
+    <main class="main">
+      <header class="main-header">
+        <div>
+          <h1 class="page-title">Resort Submissions</h1>
+          <p class="page-subtitle">Review and process new resort requests</p>
+        </div>
+        <button class="btn-refresh" onclick="loadSubmissions()" id="refreshBtn">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+          Refresh
+        </button>
+      </header>
 
-<strong>Resort Name:</strong> <input type="text" class="editable" id="resortNameInput" value="[RESORT NAME]" oninput="updatePrompt()">
-<strong>Country:</strong> <input type="text" class="editable" id="countryInput" value="[COUNTRY]" oninput="updatePrompt()">
+      <div class="main-content">
+        <!-- Stats Row -->
+        <div class="grid grid-3" style="margin-bottom: 24px;">
+          <div class="stat-card">
+            <div class="stat-label">Pending Review</div>
+            <div class="stat-value" id="statPending">-</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Approved This Month</div>
+            <div class="stat-value" id="statApproved">-</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Total Resorts</div>
+            <div class="stat-value" id="statTotal">-</div>
+          </div>
+        </div>
 
-<h3>Data Required</h3>
-Provide the following information in this exact format. Use NULL if data cannot be found or verified.
+        <div class="grid grid-2">
+          <!-- Submissions List -->
+          <div class="card">
+            <div class="card-header">
+              <h2 class="card-title">
+                <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+                Pending Submissions
+              </h2>
+            </div>
+            <div class="card-body-flush">
+              <div class="submission-list" id="submissionList">
+                <div class="empty-state">
+                  <svg fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5m6 4.125l2.25 2.25m0 0l2.25 2.25M12 13.875l2.25-2.25M12 13.875l-2.25 2.25M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z"/></svg>
+                  <p>Loading submissions...</p>
+                </div>
+              </div>
+            </div>
+          </div>
 
-<strong>Basic Info</strong>
-- Official Name: (exact name as used by the resort)
-- Country:
-- Country Code: (ISO 3166-1 alpha-2, e.g., US, CA, FR, JP)
-- Region/State/Province:
-- Official Website: (full URL)
+          <!-- Selected Submission Details -->
+          <div class="card" id="detailsCard">
+            <div class="card-header">
+              <h2 class="card-title">
+                <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                Submission Details
+              </h2>
+            </div>
+            <div class="card-body" id="detailsBody">
+              <div class="empty-state">
+                <svg fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.042 21.672L13.684 16.6m0 0l-2.51 2.225.569-9.47 5.227 7.917-3.286-.672zM12 2.25V4.5m5.834.166l-1.591 1.591M20.25 10.5H18M7.757 14.743l-1.59 1.59M6 10.5H3.75m4.007-4.243l-1.59-1.59"/></svg>
+                <p>Select a submission to view details</p>
+              </div>
+            </div>
+          </div>
+        </div>
 
-<strong>Coordinates</strong>
-- Latitude: (decimal degrees, e.g., 46.8523)
-- Longitude: (decimal degrees, e.g., -121.7603)
+        <!-- Processing Section -->
+        <div class="card" style="margin-top: 24px;" id="processingCard">
+          <div class="card-header">
+            <h2 class="card-title">
+              <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+              Process Resort
+            </h2>
+          </div>
+          <div class="card-body">
+            <div class="tabs">
+              <button class="tab active" data-tab="workflow">Workflow</button>
+              <button class="tab" data-tab="research">Research Prompt</button>
+              <button class="tab" data-tab="image">Process Image</button>
+            </div>
 
-<strong>Mountain Stats</strong>
-- Vertical Drop: (meters)
-- Number of Runs/Trails:
-- Number of Lifts:
-- Annual Snowfall: (centimeters)
+            <!-- Workflow Tab -->
+            <div id="tabWorkflow" class="tab-content">
+              <div class="workflow-steps">
+                <div class="workflow-step">
+                  <div class="step-number" id="step1">1</div>
+                  <div class="step-content">
+                    <div class="step-title">Select a submission above</div>
+                    <div class="step-desc">Click on a pending submission to load its details</div>
+                  </div>
+                </div>
+                <div class="workflow-step">
+                  <div class="step-number" id="step2">2</div>
+                  <div class="step-content">
+                    <div class="step-title">Copy Research Prompt</div>
+                    <div class="step-desc">Go to Research Prompt tab, copy, and paste to Claude to get resort JSON data</div>
+                  </div>
+                </div>
+                <div class="workflow-step">
+                  <div class="step-number" id="step3">3</div>
+                  <div class="step-content">
+                    <div class="step-title">Process Image</div>
+                    <div class="step-desc">Go to Process Image tab to upload and optimize the resort cover image</div>
+                  </div>
+                </div>
+                <div class="workflow-step">
+                  <div class="step-number" id="step4">4</div>
+                  <div class="step-content">
+                    <div class="step-title">Insert Resort Data</div>
+                    <div class="step-desc">Ask Claude Code to verify JSON and generate INSERT SQL, then run in Supabase</div>
+                  </div>
+                </div>
+                <div class="workflow-step">
+                  <div class="step-number" id="step5">5</div>
+                  <div class="step-content">
+                    <div class="step-title">Approve or Reject</div>
+                    <div class="step-desc">Update submission status - approved sends email notification to user</div>
+                  </div>
+                </div>
+              </div>
+            </div>
 
-<strong>Terrain Breakdown</strong> (must total 100%)
-- Beginner %:
-- Intermediate %:
-- Advanced/Expert %:
+            <!-- Research Prompt Tab -->
+            <div id="tabResearch" class="tab-content hidden">
+              <div class="form-group">
+                <label class="form-label">Resort Name</label>
+                <input type="text" class="form-input" id="promptResortName" placeholder="Resort name will auto-fill from selection">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Country</label>
+                <input type="text" class="form-input" id="promptCountry" placeholder="Country will auto-fill from selection">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Generated Prompt</label>
+                <div class="prompt-display" id="promptDisplay">Select a submission or enter resort details above to generate the research prompt.</div>
+              </div>
+              <div style="display: flex; align-items: center; gap: 16px; margin-top: 16px;">
+                <button class="btn btn-sm" onclick="copyPrompt()">
+                  <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+                  Copy Prompt
+                </button>
+                <span class="copy-status" id="copyStatus">
+                  <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+                  Copied!
+                </span>
+              </div>
+            </div>
 
-<strong>Season & Features</strong>
-- Typical Season Open: (month, e.g., "November")
-- Typical Season Close: (month, e.g., "April")
-- Night Skiing: (Yes/No)
-- Pass Affiliation: (Ikon, Epic, Mountain Collective, Indy Pass, or NULL)
-
-<h3>Research Sources</h3>
-1. Resort's official website
-2. Skiresort.info
-3. OnTheSnow.com
-4. Wikipedia
-5. ZRankings.com
-
-<h3>Output Format</h3>
-Return as a JSON object ready for database insertion:
-<div class="json-block">{
-  "name": "",
-  "country": "",
-  "country_code": "",
-  "region": "",
-  "lat": 0.0000,
-  "lng": 0.0000,
-  "website": "",
-  "vertical_m": null,
-  "runs": null,
-  "lifts": null,
-  "annual_snowfall_cm": null,
-  "beginner_pct": null,
-  "intermediate_pct": null,
-  "advanced_pct": null,
-  "pass_affiliation": null,
-  "season_open": null,
-  "season_close": null,
-  "has_night_skiing": null,
-  "verified": false
-}</div>
-<h3>Important Notes</h3>
-- Convert all measurements to metric (meters, centimeters)
-- Coordinates must be precise (at least 4 decimal places)
-- If conflicting data exists, prefer the resort's official website
-- For terrain percentages, round to whole numbers and ensure they total 100%
-- Only include pass affiliations for major multi-resort passes
-    </div>
-
-    <div class="copy-area">
-      <button class="btn-secondary btn-small" id="copyPromptBtn" onclick="copyPrompt()">📋 Copy Prompt</button>
-      <span class="copy-checkmark" id="copyCheck">✓ Copied!</span>
-    </div>
-
-    <!-- Image Processing Section -->
-    <h2>🖼️ Process Image</h2>
-
-    <label>Submission ID <span style="color:#94a3b8">(optional)</span></label>
-    <input type="text" id="submissionId" placeholder="e.g., a1b2c3d4-...">
-    <p class="hint">Leave empty to use Photo URL instead</p>
-
-    <label>Photo URL <span style="color:#94a3b8">(if no Submission ID)</span></label>
-    <input type="text" id="photoUrl" placeholder="https://...">
-
-    <label>Resort Name <span style="color:#dc2626">*</span></label>
-    <input type="text" id="resortName" placeholder="e.g., Kicking Horse">
-    <p class="hint">Use the official name from Claude's JSON — becomes the image filename</p>
-
-    <button id="processBtn" onclick="processImage()">Process Image</button>
-    <div id="result"></div>
+            <!-- Process Image Tab -->
+            <div id="tabImage" class="tab-content hidden">
+              <div class="form-group">
+                <label class="form-label">Submission ID</label>
+                <input type="text" class="form-input" id="imageSubmissionId" placeholder="Auto-filled from selected submission">
+                <p class="form-hint">Leave empty to use Photo URL instead</p>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Photo URL (alternative)</label>
+                <input type="text" class="form-input" id="imagePhotoUrl" placeholder="https://...">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Resort Name <span>*</span></label>
+                <input type="text" class="form-input" id="imageResortName" placeholder="Official resort name for filename">
+                <p class="form-hint">Use the official name from Claude's JSON response</p>
+              </div>
+              <button class="btn" onclick="processImage()" id="processImageBtn">
+                <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                Process Image
+              </button>
+              <div id="imageResult"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
   </div>
 
   <script>
-    // Supabase config
+    // ============ Configuration ============
     const SUPABASE_URL = 'https://rnudbfdhrenesamdjzdk.supabase.co';
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJudWRiZmRocmVuZXNhbWRqemRrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg2MjEwNTIsImV4cCI6MjA4NDE5NzA1Mn0.oxSYGKF5jkiTCWZblioMxYnKK8d-NGQkp5incBTYi3E';
 
-    // Admin whitelist - only these emails can access
-    const ADMIN_EMAILS = [
-      'slopestoryapp@gmail.com'
-    ];
+    const ADMIN_EMAILS = ['slopestoryapp@gmail.com'];
 
-    // Initialize Supabase (with fallback if library fails to load)
+    // ============ Initialize Supabase ============
     let sb = null;
     try {
       if (window.supabase && window.supabase.createClient) {
         sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-      } else {
-        console.error('Supabase library not loaded');
       }
     } catch (e) {
       console.error('Failed to initialize Supabase:', e);
     }
 
-    // Check auth state on load
+    // ============ State ============
+    let currentSubmission = null;
+    let submissions = [];
+
+    // ============ DOM Elements ============
+    const $loadingScreen = document.getElementById('loadingScreen');
+    const $authScreen = document.getElementById('authScreen');
+    const $dashboard = document.getElementById('dashboard');
+    const $authError = document.getElementById('authError');
+
+    // ============ Auth Functions ============
     async function checkAuth() {
-      // If Supabase failed to load, just show auth screen
       if (!sb) {
-        console.error('Supabase not available, showing auth screen');
         showAuthScreen();
         return;
       }
@@ -284,17 +863,15 @@ Return as a JSON object ready for database insertion:
         const { data: { session }, error } = await sb.auth.getSession();
 
         if (error) {
-          console.error('Auth error:', error);
           showAuthScreen();
           return;
         }
 
         if (session && ADMIN_EMAILS.includes(session.user.email.toLowerCase())) {
-          showAdminContent(session.user.email);
+          showDashboard(session.user.email);
         } else if (session) {
-          // Logged in but not authorized
           await sb.auth.signOut();
-          showAuthScreen('Access denied. This account is not authorized for admin access.');
+          showAuthScreen('Access denied. This account is not authorized.');
         } else {
           showAuthScreen();
         }
@@ -304,28 +881,35 @@ Return as a JSON object ready for database insertion:
       }
     }
 
-    function showAdminContent(email) {
-      document.getElementById('loadingScreen').style.display = 'none';
-      document.getElementById('authScreen').style.display = 'none';
-      document.getElementById('adminContent').style.display = 'block';
-      document.getElementById('userEmail').textContent = email;
-    }
-
     function showAuthScreen(error = null) {
-      document.getElementById('loadingScreen').style.display = 'none';
-      document.getElementById('authScreen').style.display = 'flex';
-      document.getElementById('adminContent').style.display = 'none';
+      $loadingScreen.classList.add('hidden');
+      $authScreen.classList.remove('hidden');
+      $dashboard.classList.add('hidden');
 
       if (error) {
-        document.getElementById('authError').textContent = error;
-        document.getElementById('authError').style.display = 'block';
+        $authError.textContent = error;
+        $authError.style.display = 'block';
+      } else {
+        $authError.style.display = 'none';
       }
+    }
+
+    function showDashboard(email) {
+      $loadingScreen.classList.add('hidden');
+      $authScreen.classList.add('hidden');
+      $dashboard.classList.remove('hidden');
+
+      document.getElementById('userEmail').textContent = email;
+      document.getElementById('userAvatar').textContent = email.charAt(0).toUpperCase();
+
+      loadSubmissions();
+      loadStats();
     }
 
     async function signIn() {
       if (!sb) {
-        document.getElementById('authError').textContent = 'Authentication service unavailable. Please refresh the page.';
-        document.getElementById('authError').style.display = 'block';
+        $authError.textContent = 'Service unavailable. Please refresh.';
+        $authError.style.display = 'block';
         return;
       }
 
@@ -333,92 +917,295 @@ Return as a JSON object ready for database insertion:
       const password = document.getElementById('authPassword').value;
 
       if (!email || !password) {
-        document.getElementById('authError').textContent = 'Please enter email and password';
-        document.getElementById('authError').style.display = 'block';
+        $authError.textContent = 'Please enter email and password';
+        $authError.style.display = 'block';
         return;
       }
 
-      // Check whitelist before attempting login
       if (!ADMIN_EMAILS.includes(email.toLowerCase())) {
-        document.getElementById('authError').textContent = 'Access denied. This email is not authorized for admin access.';
-        document.getElementById('authError').style.display = 'block';
+        $authError.textContent = 'Access denied. Not authorized.';
+        $authError.style.display = 'block';
         return;
       }
 
-      document.getElementById('authError').style.display = 'none';
-      document.getElementById('authLoading').style.display = 'block';
+      $authError.style.display = 'none';
 
       const { data, error } = await sb.auth.signInWithPassword({ email, password });
 
-      document.getElementById('authLoading').style.display = 'none';
-
       if (error) {
-        document.getElementById('authError').textContent = error.message;
-        document.getElementById('authError').style.display = 'block';
+        $authError.textContent = error.message;
+        $authError.style.display = 'block';
       } else {
-        showAdminContent(data.user.email);
-      }
-    }
-
-    async function signInWithGoogle() {
-      if (!sb) {
-        document.getElementById('authError').textContent = 'Authentication service unavailable. Please refresh the page.';
-        document.getElementById('authError').style.display = 'block';
-        return;
-      }
-
-      const { error } = await sb.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: window.location.href
-        }
-      });
-
-      if (error) {
-        document.getElementById('authError').textContent = error.message;
-        document.getElementById('authError').style.display = 'block';
+        showDashboard(data.user.email);
       }
     }
 
     async function signOut() {
-      if (sb) {
-        await sb.auth.signOut();
+      if (sb) await sb.auth.signOut();
+      showAuthScreen();
+    }
+
+    // ============ Data Functions ============
+    async function loadSubmissions() {
+      if (!sb) return;
+
+      const refreshBtn = document.getElementById('refreshBtn');
+      refreshBtn.classList.add('loading');
+
+      try {
+        const { data, error } = await sb
+          .from('resort_submissions')
+          .select('*')
+          .eq('status', 'pending')
+          .order('created_at', { ascending: false });
+
+        if (error) throw error;
+
+        submissions = data || [];
+        renderSubmissions();
+        document.getElementById('pendingCount').textContent = submissions.length;
+        document.getElementById('statPending').textContent = submissions.length;
+      } catch (err) {
+        console.error('Failed to load submissions:', err);
+        document.getElementById('submissionList').innerHTML = `
+          <div class="empty-state">
+            <p>Failed to load submissions. Check console for errors.</p>
+          </div>
+        `;
       }
-      showAuthScreen();
+
+      refreshBtn.classList.remove('loading');
     }
 
-    // Listen for auth changes (handles OAuth redirect)
-    if (sb) {
-      sb.auth.onAuthStateChange((event, session) => {
-        if (event === 'SIGNED_IN' && session) {
-          if (ADMIN_EMAILS.includes(session.user.email.toLowerCase())) {
-            showAdminContent(session.user.email);
-          } else {
-            sb.auth.signOut();
-            showAuthScreen('Access denied. This account is not authorized for admin access.');
-          }
-        }
+    async function loadStats() {
+      if (!sb) return;
+
+      try {
+        // Get total resorts
+        const { count: totalResorts } = await sb
+          .from('resorts')
+          .select('*', { count: 'exact', head: true });
+
+        document.getElementById('statTotal').textContent = totalResorts || 0;
+
+        // Get approved this month
+        const startOfMonth = new Date();
+        startOfMonth.setDate(1);
+        startOfMonth.setHours(0, 0, 0, 0);
+
+        const { count: approvedCount } = await sb
+          .from('resort_submissions')
+          .select('*', { count: 'exact', head: true })
+          .eq('status', 'approved')
+          .gte('updated_at', startOfMonth.toISOString());
+
+        document.getElementById('statApproved').textContent = approvedCount || 0;
+      } catch (err) {
+        console.error('Failed to load stats:', err);
+      }
+    }
+
+    function renderSubmissions() {
+      const list = document.getElementById('submissionList');
+
+      if (submissions.length === 0) {
+        list.innerHTML = `
+          <div class="empty-state">
+            <svg fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            <p>No pending submissions</p>
+          </div>
+        `;
+        return;
+      }
+
+      list.innerHTML = submissions.map(sub => `
+        <div class="submission-item ${currentSubmission?.id === sub.id ? 'active' : ''}" onclick="selectSubmission('${sub.id}')">
+          <div class="submission-name">${escapeHtml(sub.resort_name)}</div>
+          <div class="submission-meta">
+            <span>${escapeHtml(sub.country || 'Unknown')}</span>
+            <span>${formatDate(sub.created_at)}</span>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function selectSubmission(id) {
+      currentSubmission = submissions.find(s => s.id === id);
+      renderSubmissions();
+      renderDetails();
+      populateProcessingFields();
+      updateWorkflowSteps();
+    }
+
+    function renderDetails() {
+      const body = document.getElementById('detailsBody');
+
+      if (!currentSubmission) {
+        body.innerHTML = `
+          <div class="empty-state">
+            <svg fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.042 21.672L13.684 16.6m0 0l-2.51 2.225.569-9.47 5.227 7.917-3.286-.672zM12 2.25V4.5m5.834.166l-1.591 1.591M20.25 10.5H18M7.757 14.743l-1.59 1.59M6 10.5H3.75m4.007-4.243l-1.59-1.59"/></svg>
+            <p>Select a submission to view details</p>
+          </div>
+        `;
+        return;
+      }
+
+      const sub = currentSubmission;
+      body.innerHTML = `
+        <div class="detail-panel">
+          <div class="detail-header">
+            <div>
+              <div class="detail-title">${escapeHtml(sub.resort_name)}</div>
+              <div class="detail-subtitle">${escapeHtml(sub.country || 'Country not specified')}</div>
+            </div>
+            <span class="status-badge status-pending">Pending</span>
+          </div>
+
+          <div class="detail-grid">
+            <div class="detail-item">
+              <label>Submission ID</label>
+              <p style="font-family: monospace; font-size: 12px;">${sub.id}</p>
+            </div>
+            <div class="detail-item">
+              <label>Submitted</label>
+              <p>${formatDate(sub.created_at)}</p>
+            </div>
+            <div class="detail-item">
+              <label>User ID</label>
+              <p style="font-family: monospace; font-size: 12px;">${sub.user_id || 'Anonymous'}</p>
+            </div>
+            <div class="detail-item">
+              <label>Notes</label>
+              <p>${escapeHtml(sub.notes) || 'None'}</p>
+            </div>
+          </div>
+
+          ${sub.photo_url ? `
+            <div class="detail-image">
+              <img src="${sub.photo_url}" alt="Submitted photo" onerror="this.parentElement.innerHTML='<p style=\\'padding:48px;text-align:center;color:var(--text-muted)\\'>Image failed to load</p>'">
+            </div>
+          ` : ''}
+
+          <div class="action-row">
+            <button class="btn btn-success btn-sm" onclick="updateStatus('approved')">
+              <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+              Approve
+            </button>
+            <button class="btn btn-danger btn-sm" onclick="updateStatus('rejected')">
+              <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+              Reject
+            </button>
+          </div>
+        </div>
+      `;
+    }
+
+    function populateProcessingFields() {
+      if (!currentSubmission) return;
+
+      document.getElementById('promptResortName').value = currentSubmission.resort_name || '';
+      document.getElementById('promptCountry').value = currentSubmission.country || '';
+      document.getElementById('imageSubmissionId').value = currentSubmission.id || '';
+      document.getElementById('imageResortName').value = currentSubmission.resort_name || '';
+
+      updatePrompt();
+    }
+
+    function updateWorkflowSteps() {
+      const step1 = document.getElementById('step1');
+      if (currentSubmission) {
+        step1.classList.add('complete');
+      } else {
+        step1.classList.remove('complete');
+      }
+    }
+
+    async function updateStatus(status) {
+      if (!currentSubmission || !sb) return;
+
+      if (!confirm(`Are you sure you want to ${status} this submission?`)) return;
+
+      try {
+        const { error } = await sb
+          .from('resort_submissions')
+          .update({ status, updated_at: new Date().toISOString() })
+          .eq('id', currentSubmission.id);
+
+        if (error) throw error;
+
+        alert(`Submission ${status} successfully!`);
+        currentSubmission = null;
+        loadSubmissions();
+        renderDetails();
+      } catch (err) {
+        console.error('Failed to update status:', err);
+        alert('Failed to update status: ' + err.message);
+      }
+    }
+
+    // ============ Tabs ============
+    document.querySelectorAll('.tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
+
+        tab.classList.add('active');
+        document.getElementById('tab' + capitalize(tab.dataset.tab)).classList.remove('hidden');
       });
-    }
-
-    // Initialize with timeout fallback
-    const authTimeout = setTimeout(() => {
-      console.warn('Auth check timed out, showing login screen');
-      showAuthScreen();
-    }, 3000); // Reduced to 3 seconds
-
-    checkAuth().finally(() => clearTimeout(authTimeout));
-
-    // Allow Enter key to submit
-    document.getElementById('authPassword').addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') signIn();
     });
 
-    // ============ Original Admin Functions ============
+    // ============ Research Prompt ============
+    document.getElementById('promptResortName').addEventListener('input', updatePrompt);
+    document.getElementById('promptCountry').addEventListener('input', updatePrompt);
+
+    function updatePrompt() {
+      const resortName = document.getElementById('promptResortName').value || '[RESORT NAME]';
+      const country = document.getElementById('promptCountry').value || '[COUNTRY]';
+
+      const prompt = `Research the following ski resort and provide accurate, verified data:
+
+<strong>Resort Name:</strong> ${escapeHtml(resortName)}
+<strong>Country:</strong> ${escapeHtml(country)}
+
+<strong>Data Required</strong>
+Provide the following information. Use NULL if data cannot be found.
+
+<strong>Basic Info</strong>
+- Official Name, Country, Country Code (ISO 3166-1 alpha-2)
+- Region/State/Province, Official Website URL
+
+<strong>Coordinates</strong>
+- Latitude & Longitude (decimal degrees, 4+ decimal places)
+
+<strong>Mountain Stats</strong>
+- Vertical Drop (meters), Number of Runs, Number of Lifts
+- Annual Snowfall (centimeters)
+
+<strong>Terrain Breakdown</strong> (must total 100%)
+- Beginner %, Intermediate %, Advanced/Expert %
+
+<strong>Season & Features</strong>
+- Season Open/Close months, Night Skiing (Yes/No)
+- Pass Affiliation (Ikon, Epic, Mountain Collective, Indy Pass, or NULL)
+
+<strong>Output as JSON:</strong>
+{
+  "name": "", "country": "", "country_code": "", "region": "",
+  "lat": 0.0000, "lng": 0.0000, "website": "",
+  "vertical_m": null, "runs": null, "lifts": null,
+  "annual_snowfall_cm": null, "beginner_pct": null,
+  "intermediate_pct": null, "advanced_pct": null,
+  "pass_affiliation": null, "season_open": null,
+  "season_close": null, "has_night_skiing": null,
+  "verified": false
+}`;
+
+      document.getElementById('promptDisplay').innerHTML = prompt;
+    }
 
     function getPromptText() {
-      const resortName = document.getElementById('resortNameInput').value || '[RESORT NAME]';
-      const country = document.getElementById('countryInput').value || '[COUNTRY]';
+      const resortName = document.getElementById('promptResortName').value || '[RESORT NAME]';
+      const country = document.getElementById('promptCountry').value || '[COUNTRY]';
 
       return `Research the following ski resort and provide accurate, verified data:
 
@@ -426,47 +1213,44 @@ Return as a JSON object ready for database insertion:
 **Country:** ${country}
 
 ## Data Required
-
-Provide the following information in this exact format. Use NULL if data cannot be found or verified.
+Provide the following information. Use NULL if data cannot be found or verified.
 
 ### Basic Info
-- **Official Name:** (exact name as used by the resort)
-- **Country:**
-- **Country Code:** (ISO 3166-1 alpha-2, e.g., US, CA, FR, JP)
-- **Region/State/Province:**
-- **Official Website:** (full URL)
+- Official Name (exact name as used by the resort)
+- Country
+- Country Code (ISO 3166-1 alpha-2, e.g., US, CA, FR, JP)
+- Region/State/Province
+- Official Website (full URL)
 
 ### Coordinates
-- **Latitude:** (decimal degrees, e.g., 46.8523)
-- **Longitude:** (decimal degrees, e.g., -121.7603)
+- Latitude (decimal degrees, e.g., 46.8523)
+- Longitude (decimal degrees, e.g., -121.7603)
 
 ### Mountain Stats
-- **Vertical Drop:** (meters)
-- **Number of Runs/Trails:**
-- **Number of Lifts:**
-- **Annual Snowfall:** (centimeters)
+- Vertical Drop (meters)
+- Number of Runs/Trails
+- Number of Lifts
+- Annual Snowfall (centimeters)
 
 ### Terrain Breakdown (must total 100%)
-- **Beginner %:**
-- **Intermediate %:**
-- **Advanced/Expert %:**
+- Beginner %
+- Intermediate %
+- Advanced/Expert %
 
 ### Season & Features
-- **Typical Season Open:** (month, e.g., "November" or "Late November")
-- **Typical Season Close:** (month, e.g., "April" or "Early May")
-- **Night Skiing:** (Yes/No)
-- **Pass Affiliation:** (Ikon, Epic, Mountain Collective, Indy Pass, or NULL)
+- Typical Season Open (month)
+- Typical Season Close (month)
+- Night Skiing (Yes/No)
+- Pass Affiliation (Ikon, Epic, Mountain Collective, Indy Pass, or NULL)
 
-## Research Sources (in order of priority)
+## Research Sources (priority order)
 1. Resort's official website
 2. Skiresort.info
 3. OnTheSnow.com
 4. Wikipedia
-5. ZRankings.com
 
 ## Output Format
-
-Return as a JSON object ready for database insertion:
+Return as JSON ready for database insertion:
 
 {
   "name": "",
@@ -490,87 +1274,60 @@ Return as a JSON object ready for database insertion:
   "verified": false
 }
 
-## Important Notes
-- Convert all measurements to metric (meters, centimeters)
-- Coordinates must be precise (at least 4 decimal places)
-- If conflicting data exists, prefer the resort's official website
-- For terrain percentages, round to whole numbers and ensure they total 100%
-- Only include pass affiliations for major multi-resort passes`;
+## Important
+- Convert all measurements to metric
+- Coordinates must be precise (4+ decimal places)
+- Terrain percentages must total 100%`;
     }
 
     function copyPrompt() {
-      const prompt = getPromptText();
-      const btn = document.getElementById('copyPromptBtn');
-      const check = document.getElementById('copyCheck');
-
-      const textarea = document.createElement('textarea');
-      textarea.value = prompt;
-      textarea.style.position = 'fixed';
-      textarea.style.opacity = '0';
-      document.body.appendChild(textarea);
-      textarea.select();
-
-      try {
+      const text = getPromptText();
+      navigator.clipboard.writeText(text).then(() => {
+        const status = document.getElementById('copyStatus');
+        status.classList.add('show');
+        setTimeout(() => status.classList.remove('show'), 2000);
+      }).catch(() => {
+        // Fallback
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        document.body.appendChild(textarea);
+        textarea.select();
         document.execCommand('copy');
-        btn.classList.add('copy-success');
-        check.classList.add('show');
-        setTimeout(() => btn.classList.remove('copy-success'), 400);
-        setTimeout(() => check.classList.remove('show'), 2000);
-      } catch (e) {
-        alert('Copy failed - please select the text manually');
-      }
+        document.body.removeChild(textarea);
 
-      document.body.removeChild(textarea);
+        const status = document.getElementById('copyStatus');
+        status.classList.add('show');
+        setTimeout(() => status.classList.remove('show'), 2000);
+      });
     }
 
-    function copyUrl(url) {
-      const textarea = document.createElement('textarea');
-      textarea.value = url;
-      textarea.style.position = 'fixed';
-      textarea.style.opacity = '0';
-      document.body.appendChild(textarea);
-      textarea.select();
-      try {
-        document.execCommand('copy');
-        event.target.textContent = 'Copied!';
-        event.target.classList.add('copy-success');
-        setTimeout(() => event.target.classList.remove('copy-success'), 400);
-      } catch (e) {
-        alert('Copy failed. URL: ' + url);
-      }
-      document.body.removeChild(textarea);
-    }
-
+    // ============ Process Image ============
     async function processImage() {
-      const btn = document.getElementById('processBtn');
-      const result = document.getElementById('result');
-      const submissionId = document.getElementById('submissionId').value.trim();
-      const photoUrl = document.getElementById('photoUrl').value.trim();
-      const resortName = document.getElementById('resortName').value.trim();
+      const btn = document.getElementById('processImageBtn');
+      const result = document.getElementById('imageResult');
+      const submissionId = document.getElementById('imageSubmissionId').value.trim();
+      const photoUrl = document.getElementById('imagePhotoUrl').value.trim();
+      const resortName = document.getElementById('imageResortName').value.trim();
 
       if (!resortName) {
-        result.className = 'result error';
-        result.innerHTML = 'Resort name is required';
+        result.innerHTML = '<div class="result-box error">Resort name is required</div>';
         return;
       }
 
       if (!submissionId && !photoUrl) {
-        result.className = 'result error';
-        result.innerHTML = 'Either Submission ID or Photo URL is required';
+        result.innerHTML = '<div class="result-box error">Either Submission ID or Photo URL is required</div>';
         return;
       }
 
       btn.disabled = true;
-      btn.textContent = 'Processing...';
-      result.className = 'result';
-      result.innerHTML = 'Uploading to Cloudinary, resizing, converting to WebP...';
+      btn.innerHTML = '<div class="spinner"></div> Processing...';
+      result.innerHTML = '';
 
       try {
         const body = { resort_name: resortName };
         if (submissionId) body.submission_id = submissionId;
         else body.photo_url = photoUrl;
 
-        // Get current session for auth token
         const { data: { session } } = await sb.auth.getSession();
 
         const response = await fetch(SUPABASE_URL + '/functions/v1/process-resort-image', {
@@ -585,24 +1342,67 @@ Return as a JSON object ready for database insertion:
         const data = await response.json();
 
         if (data.success) {
-          result.className = 'result success';
           result.innerHTML = `
-            <strong>✅ Success!</strong><br>
-            Compression: ${data.compressionRatio}<br>
-            <div class="url-box">${data.url}</div>
-            <button class="copy-btn" onclick="copyUrl('${data.url}')">Copy URL</button>
+            <div class="result-box success">
+              <strong>Image processed successfully!</strong><br>
+              <span style="color: var(--text-secondary);">Compression: ${data.compressionRatio}</span>
+              <div class="result-url">${data.url}</div>
+              <button class="btn btn-sm btn-secondary" style="margin-top: 12px;" onclick="navigator.clipboard.writeText('${data.url}'); this.textContent='Copied!'">
+                Copy URL
+              </button>
+            </div>
           `;
         } else {
-          result.className = 'result error';
-          result.innerHTML = '<strong>Error:</strong> ' + JSON.stringify(data);
+          result.innerHTML = `<div class="result-box error"><strong>Error:</strong> ${JSON.stringify(data)}</div>`;
         }
       } catch (e) {
-        result.className = 'result error';
-        result.innerHTML = '<strong>Error:</strong> ' + e.message;
+        result.innerHTML = `<div class="result-box error"><strong>Error:</strong> ${e.message}</div>`;
       }
 
       btn.disabled = false;
-      btn.textContent = 'Process Image';
+      btn.innerHTML = `
+        <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+        Process Image
+      `;
+    }
+
+    // ============ Utilities ============
+    function escapeHtml(text) {
+      if (!text) return '';
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    function formatDate(dateStr) {
+      if (!dateStr) return 'Unknown';
+      const date = new Date(dateStr);
+      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    }
+
+    function capitalize(str) {
+      return str.charAt(0).toUpperCase() + str.slice(1);
+    }
+
+    // ============ Initialize ============
+    const authTimeout = setTimeout(() => showAuthScreen(), 3000);
+    checkAuth().finally(() => clearTimeout(authTimeout));
+
+    document.getElementById('authPassword').addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') signIn();
+    });
+
+    if (sb) {
+      sb.auth.onAuthStateChange((event, session) => {
+        if (event === 'SIGNED_IN' && session) {
+          if (ADMIN_EMAILS.includes(session.user.email.toLowerCase())) {
+            showDashboard(session.user.email);
+          } else {
+            sb.auth.signOut();
+            showAuthScreen('Access denied. Not authorized.');
+          }
+        }
+      });
     }
   </script>
 </body>
