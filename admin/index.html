@@ -953,20 +953,11 @@
       refreshBtn.classList.add('loading');
 
       try {
-        // First, let's see ALL submissions regardless of status
-        const { data: allData, error: allError } = await sb
-          .from('resort_submissions')
-          .select('*');
-
-        console.log('All submissions query:', { data: allData, error: allError });
-
         const { data, error } = await sb
           .from('resort_submissions')
           .select('*')
           .eq('status', 'pending')
           .order('submitted_at', { ascending: false });
-
-        console.log('Pending submissions query:', { data, error });
 
         if (error) throw error;
 
