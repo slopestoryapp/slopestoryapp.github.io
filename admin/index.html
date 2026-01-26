@@ -268,15 +268,26 @@ Return as a JSON object ready for database insertion:
 
     // Check auth state on load
     async function checkAuth() {
-      const { data: { session } } = await supabase.auth.getSession();
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession();
 
-      if (session && ADMIN_EMAILS.includes(session.user.email.toLowerCase())) {
-        showAdminContent(session.user.email);
-      } else if (session) {
-        // Logged in but not authorized
-        await supabase.auth.signOut();
-        showAuthScreen('Access denied. This account is not authorized for admin access.');
-      } else {
+        if (error) {
+          console.error('Auth error:', error);
+          showAuthScreen();
+          return;
+        }
+
+        if (session && ADMIN_EMAILS.includes(session.user.email.toLowerCase())) {
+          showAdminContent(session.user.email);
+        } else if (session) {
+          // Logged in but not authorized
+          await supabase.auth.signOut();
+          showAuthScreen('Access denied. This account is not authorized for admin access.');
+        } else {
+          showAuthScreen();
+        }
+      } catch (err) {
+        console.error('Auth check failed:', err);
         showAuthScreen();
       }
     }
@@ -362,8 +373,13 @@ Return as a JSON object ready for database insertion:
       }
     });
 
-    // Initialize
-    checkAuth();
+    // Initialize with timeout fallback
+    const authTimeout = setTimeout(() => {
+      console.warn('Auth check timed out, showing login screen');
+      showAuthScreen();
+    }, 5000);
+
+    checkAuth().finally(() => clearTimeout(authTimeout));
 
     // Allow Enter key to submit
     document.getElementById('authPassword').addEventListener('keypress', (e) => {
