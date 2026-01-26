@@ -263,11 +263,27 @@ Return as a JSON object ready for database insertion:
       'slopestoryapp@gmail.com'
     ];
 
-    // Initialize Supabase
-    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    // Initialize Supabase (with fallback if library fails to load)
+    let supabase = null;
+    try {
+      if (window.supabase && window.supabase.createClient) {
+        supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+      } else {
+        console.error('Supabase library not loaded');
+      }
+    } catch (e) {
+      console.error('Failed to initialize Supabase:', e);
+    }
 
     // Check auth state on load
     async function checkAuth() {
+      // If Supabase failed to load, just show auth screen
+      if (!supabase) {
+        console.error('Supabase not available, showing auth screen');
+        showAuthScreen();
+        return;
+      }
+
       try {
         const { data: { session }, error } = await supabase.auth.getSession();
 
@@ -311,6 +327,12 @@ Return as a JSON object ready for database insertion:
     }
 
     async function signIn() {
+      if (!supabase) {
+        document.getElementById('authError').textContent = 'Authentication service unavailable. Please refresh the page.';
+        document.getElementById('authError').style.display = 'block';
+        return;
+      }
+
       const email = document.getElementById('authEmail').value.trim();
       const password = document.getElementById('authPassword').value;
 
@@ -343,6 +365,12 @@ Return as a JSON object ready for database insertion:
     }
 
     async function signInWithGoogle() {
+      if (!supabase) {
+        document.getElementById('authError').textContent = 'Authentication service unavailable. Please refresh the page.';
+        document.getElementById('authError').style.display = 'block';
+        return;
+      }
+
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
@@ -357,27 +385,31 @@ Return as a JSON object ready for database insertion:
     }
 
     async function signOut() {
-      await supabase.auth.signOut();
+      if (supabase) {
+        await supabase.auth.signOut();
+      }
       showAuthScreen();
     }
 
     // Listen for auth changes (handles OAuth redirect)
-    supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_IN' && session) {
-        if (ADMIN_EMAILS.includes(session.user.email.toLowerCase())) {
-          showAdminContent(session.user.email);
-        } else {
-          supabase.auth.signOut();
-          showAuthScreen('Access denied. This account is not authorized for admin access.');
+    if (supabase) {
+      supabase.auth.onAuthStateChange((event, session) => {
+        if (event === 'SIGNED_IN' && session) {
+          if (ADMIN_EMAILS.includes(session.user.email.toLowerCase())) {
+            showAdminContent(session.user.email);
+          } else {
+            supabase.auth.signOut();
+            showAuthScreen('Access denied. This account is not authorized for admin access.');
+          }
         }
-      }
-    });
+      });
+    }
 
     // Initialize with timeout fallback
     const authTimeout = setTimeout(() => {
       console.warn('Auth check timed out, showing login screen');
       showAuthScreen();
-    }, 5000);
+    }, 3000); // Reduced to 3 seconds
 
     checkAuth().finally(() => clearTimeout(authTimeout));
 
