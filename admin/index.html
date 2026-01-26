@@ -1331,19 +1331,31 @@ Return as JSON ready for database insertion:
         if (submissionId) body.submission_id = submissionId;
         else body.photo_url = photoUrl;
 
-        const { data: { session } } = await sb.auth.getSession();
+        // Get fresh session
+        const { data: { session }, error: sessionError } = await sb.auth.getSession();
+
+        if (sessionError || !session?.access_token) {
+          result.innerHTML = '<div class="result-box error">Session expired. Please sign out and sign back in.</div>';
+          btn.disabled = false;
+          btn.innerHTML = `<svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg> Process Image`;
+          return;
+        }
+
+        console.log('Calling Edge Function with token:', session.access_token.substring(0, 20) + '...');
 
         const response = await fetch(SUPABASE_URL + '/functions/v1/process-resort-image', {
           method: 'POST',
           headers: {
-            'Authorization': 'Bearer ' + session?.access_token,
+            'Authorization': 'Bearer ' + session.access_token,
             'apikey': SUPABASE_ANON_KEY,
             'Content-Type': 'application/json'
           },
           body: JSON.stringify(body)
         });
 
+        console.log('Response status:', response.status);
         const data = await response.json();
+        console.log('Response data:', data);
 
         if (data.success) {
           result.innerHTML = `
