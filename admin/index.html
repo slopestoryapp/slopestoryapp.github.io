@@ -1336,7 +1336,8 @@ Return as JSON ready for database insertion:
         const response = await fetch(SUPABASE_URL + '/functions/v1/process-resort-image', {
           method: 'POST',
           headers: {
-            'Authorization': 'Bearer ' + (session?.access_token || SUPABASE_ANON_KEY),
+            'Authorization': 'Bearer ' + session?.access_token,
+            'apikey': SUPABASE_ANON_KEY,
             'Content-Type': 'application/json'
           },
           body: JSON.stringify(body)
