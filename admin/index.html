@@ -1362,7 +1362,11 @@ Return as JSON ready for database insertion:
             <div class="result-box success">
               <strong>Image processed successfully!</strong><br>
               <span style="color: var(--text-secondary);">Compression: ${data.compressionRatio}</span>
-              <div class="result-url">${data.url}</div>
+              ${data.submissionUpdated ? '<br><span style="color: var(--success);">✓ Submission photo_url updated</span>' : ''}
+              <div style="margin-top: 16px; border-radius: 8px; overflow: hidden; background: var(--slate-darker);">
+                <img src="${data.url}" alt="Processed image" style="width: 100%; height: 200px; object-fit: cover;" onerror="this.parentElement.innerHTML='<p style=\\'padding:24px;text-align:center;color:var(--text-muted)\\'>Preview failed to load</p>'">
+              </div>
+              <div class="result-url" style="margin-top: 12px;">${data.url}</div>
               <button class="btn btn-sm btn-secondary" style="margin-top: 12px;" onclick="navigator.clipboard.writeText('${data.url}'); this.textContent='Copied!'">
                 Copy URL
               </button>
