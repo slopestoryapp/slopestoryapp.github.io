@@ -957,7 +957,7 @@
           .from('resort_submissions')
           .select('*')
           .eq('status', 'pending')
-          .order('created_at', { ascending: false });
+          .order('submitted_at', { ascending: false });
 
         if (error) throw error;
 
@@ -988,16 +988,11 @@
 
         document.getElementById('statTotal').textContent = totalResorts || 0;
 
-        // Get approved this month
-        const startOfMonth = new Date();
-        startOfMonth.setDate(1);
-        startOfMonth.setHours(0, 0, 0, 0);
-
+        // Get approved count (no date filter since we don't have updated_at)
         const { count: approvedCount } = await sb
           .from('resort_submissions')
           .select('*', { count: 'exact', head: true })
-          .eq('status', 'approved')
-          .gte('updated_at', startOfMonth.toISOString());
+          .eq('status', 'approved');
 
         document.getElementById('statApproved').textContent = approvedCount || 0;
       } catch (err) {
@@ -1023,7 +1018,7 @@
           <div class="submission-name">${escapeHtml(sub.resort_name)}</div>
           <div class="submission-meta">
             <span>${escapeHtml(sub.country || 'Unknown')}</span>
-            <span>${formatDate(sub.created_at)}</span>
+            <span>${formatDate(sub.submitted_at)}</span>
           </div>
         </div>
       `).join('');
@@ -1068,11 +1063,19 @@
             </div>
             <div class="detail-item">
               <label>Submitted</label>
-              <p>${formatDate(sub.created_at)}</p>
+              <p>${formatDate(sub.submitted_at)}</p>
             </div>
             <div class="detail-item">
-              <label>User ID</label>
-              <p style="font-family: monospace; font-size: 12px;">${sub.user_id || 'Anonymous'}</p>
+              <label>Submitter</label>
+              <p style="font-family: monospace; font-size: 12px;">${sub.submitted_by || 'Anonymous'}</p>
+            </div>
+            <div class="detail-item">
+              <label>Email</label>
+              <p>${escapeHtml(sub.submitter_email) || 'Not provided'}</p>
+            </div>
+            <div class="detail-item">
+              <label>Region</label>
+              <p>${escapeHtml(sub.region) || 'Not specified'}</p>
             </div>
             <div class="detail-item">
               <label>Notes</label>
@@ -1128,7 +1131,7 @@
       try {
         const { error } = await sb
           .from('resort_submissions')
-          .update({ status, updated_at: new Date().toISOString() })
+          .update({ status })
           .eq('id', currentSubmission.id);
 
         if (error) throw error;
