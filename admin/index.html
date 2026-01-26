@@ -1328,8 +1328,12 @@ Return as JSON ready for database insertion:
 
       try {
         const body = { resort_name: resortName };
-        if (submissionId) body.submission_id = submissionId;
-        else body.photo_url = photoUrl;
+        // Prefer photo_url if provided, otherwise use submission_id
+        if (photoUrl) {
+          body.photo_url = photoUrl;
+        } else if (submissionId) {
+          body.submission_id = submissionId;
+        }
 
         // Get fresh session
         const { data: { session }, error: sessionError } = await sb.auth.getSession();
@@ -1341,8 +1345,6 @@ Return as JSON ready for database insertion:
           return;
         }
 
-        console.log('Calling Edge Function with token:', session.access_token.substring(0, 20) + '...');
-
         const response = await fetch(SUPABASE_URL + '/functions/v1/process-resort-image', {
           method: 'POST',
           headers: {
@@ -1353,9 +1355,7 @@ Return as JSON ready for database insertion:
           body: JSON.stringify(body)
         });
 
-        console.log('Response status:', response.status);
         const data = await response.json();
-        console.log('Response data:', data);
 
         if (data.success) {
           result.innerHTML = `
