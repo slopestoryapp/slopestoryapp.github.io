@@ -264,10 +264,10 @@ Return as a JSON object ready for database insertion:
     ];
 
     // Initialize Supabase (with fallback if library fails to load)
-    let supabase = null;
+    let sb = null;
     try {
       if (window.supabase && window.supabase.createClient) {
-        supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
       } else {
         console.error('Supabase library not loaded');
       }
@@ -278,14 +278,14 @@ Return as a JSON object ready for database insertion:
     // Check auth state on load
     async function checkAuth() {
       // If Supabase failed to load, just show auth screen
-      if (!supabase) {
+      if (!sb) {
         console.error('Supabase not available, showing auth screen');
         showAuthScreen();
         return;
       }
 
       try {
-        const { data: { session }, error } = await supabase.auth.getSession();
+        const { data: { session }, error } = await sb.auth.getSession();
 
         if (error) {
           console.error('Auth error:', error);
@@ -297,7 +297,7 @@ Return as a JSON object ready for database insertion:
           showAdminContent(session.user.email);
         } else if (session) {
           // Logged in but not authorized
-          await supabase.auth.signOut();
+          await sb.auth.signOut();
           showAuthScreen('Access denied. This account is not authorized for admin access.');
         } else {
           showAuthScreen();
@@ -327,7 +327,7 @@ Return as a JSON object ready for database insertion:
     }
 
     async function signIn() {
-      if (!supabase) {
+      if (!sb) {
         document.getElementById('authError').textContent = 'Authentication service unavailable. Please refresh the page.';
         document.getElementById('authError').style.display = 'block';
         return;
@@ -352,7 +352,7 @@ Return as a JSON object ready for database insertion:
       document.getElementById('authError').style.display = 'none';
       document.getElementById('authLoading').style.display = 'block';
 
-      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      const { data, error } = await sb.auth.signInWithPassword({ email, password });
 
       document.getElementById('authLoading').style.display = 'none';
 
@@ -365,13 +365,13 @@ Return as a JSON object ready for database insertion:
     }
 
     async function signInWithGoogle() {
-      if (!supabase) {
+      if (!sb) {
         document.getElementById('authError').textContent = 'Authentication service unavailable. Please refresh the page.';
         document.getElementById('authError').style.display = 'block';
         return;
       }
 
-      const { error } = await supabase.auth.signInWithOAuth({
+      const { error } = await sb.auth.signInWithOAuth({
         provider: 'google',
         options: {
           redirectTo: window.location.href
@@ -385,20 +385,20 @@ Return as a JSON object ready for database insertion:
     }
 
     async function signOut() {
-      if (supabase) {
-        await supabase.auth.signOut();
+      if (sb) {
+        await sb.auth.signOut();
       }
       showAuthScreen();
     }
 
     // Listen for auth changes (handles OAuth redirect)
-    if (supabase) {
-      supabase.auth.onAuthStateChange((event, session) => {
+    if (sb) {
+      sb.auth.onAuthStateChange((event, session) => {
         if (event === 'SIGNED_IN' && session) {
           if (ADMIN_EMAILS.includes(session.user.email.toLowerCase())) {
             showAdminContent(session.user.email);
           } else {
-            supabase.auth.signOut();
+            sb.auth.signOut();
             showAuthScreen('Access denied. This account is not authorized for admin access.');
           }
         }
@@ -575,7 +575,7 @@ Return as a JSON object ready for database insertion:
         else body.photo_url = photoUrl;
 
         // Get current session for auth token
-        const { data: { session } } = await supabase.auth.getSession();
+        const { data: { session } } = await sb.auth.getSession();
 
         const response = await fetch(SUPABASE_URL + '/functions/v1/process-resort-image', {
           method: 'POST',
