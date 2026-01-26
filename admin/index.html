@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Slopestory Admin Tools</title>
+  <style>
+    body { font-family: -apple-system, system-ui, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; }
+    h1 { color: #1e3a5f; font-size: 24px; margin-bottom: 8px; }
+    h2 { color: #64748b; font-size: 16px; font-weight: 500; margin-top: 32px; margin-bottom: 16px; padding-top: 24px; border-top: 1px solid #e2e8f0; }
+    label { display: block; margin-top: 16px; color: #64748b; font-size: 14px; }
+    input { width: 100%; padding: 12px; margin-top: 6px; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 16px; box-sizing: border-box; }
+    button { width: 100%; padding: 14px; margin-top: 16px; background: #4298D2; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; }
+    button:hover { background: #3a87be; }
+    button:disabled { background: #94a3b8; cursor: not-allowed; }
+    .btn-secondary { background: #1e3a5f; }
+    .btn-secondary:hover { background: #162d4a; }
+    .btn-small { width: auto; padding: 10px 20px; font-size: 14px; }
+    .result { margin-top: 20px; padding: 16px; background: #f0f9ff; border-radius: 8px; word-break: break-all; }
+    .result.error { background: #fef2f2; color: #dc2626; }
+    .result.success { background: #f0fdf4; color: #166534; }
+    .url-box { margin-top: 12px; padding: 10px; background: white; border: 1px solid #e2e8f0; border-radius: 6px; font-family: monospace; font-size: 13px; }
+    .copy-btn { width: auto; padding: 8px 16px; margin-top: 10px; }
+    .hint { color: #94a3b8; font-size: 12px; margin-top: 4px; }
+    .workflow { background: #f8fafc; border-radius: 12px; padding: 20px; margin-bottom: 8px; }
+    .workflow ol { margin: 0; padding-left: 24px; }
+    .workflow li { padding: 8px 0; color: #334155; font-size: 14px; }
+    .workflow li.auto { color: #166534; font-weight: 500; }
+    .workflow li.manual { color: #dc2626; }
+    .workflow-title { font-size: 14px; font-weight: 600; color: #1e3a5f; margin-bottom: 12px; }
+
+    /* Prompt template styles */
+    .prompt-box { background: #1e293b; color: #e2e8f0; border-radius: 12px; padding: 20px; font-family: 'SF Mono', Monaco, 'Courier New', monospace; font-size: 13px; line-height: 1.6; white-space: pre-wrap; margin-top: 16px; }
+    .prompt-box h3 { color: #4298D2; font-size: 13px; margin: 20px 0 8px; font-family: -apple-system, system-ui, sans-serif; }
+    .prompt-box h3:first-child { margin-top: 0; }
+    .prompt-box ul { margin: 8px 0; padding-left: 20px; }
+    .prompt-box .editable { background: #4298D2; color: white; padding: 2px 8px; border-radius: 4px; border: none; font-family: inherit; font-size: inherit; min-width: 120px; }
+    .prompt-box .editable:focus { outline: 2px solid #6DB5DE; }
+    .prompt-box .json-block { background: #0f172a; padding: 12px; border-radius: 6px; margin: 12px 0; }
+
+    /* Copy button area */
+    .copy-area { display: flex; align-items: center; gap: 12px; margin-top: 16px; }
+    .copy-area button { margin: 0; }
+
+    /* Copy animation */
+    @keyframes copyPulse {
+      0% { transform: scale(1); }
+      50% { transform: scale(1.05); background: #166534; }
+      100% { transform: scale(1); }
+    }
+    .copy-success {
+      animation: copyPulse 0.4s ease-out;
+    }
+    .copy-checkmark {
+      display: inline-block;
+      opacity: 0;
+      transform: scale(0);
+      transition: all 0.3s ease;
+      color: #166534;
+      font-size: 18px;
+      font-weight: bold;
+    }
+    .copy-checkmark.show {
+      opacity: 1;
+      transform: scale(1);
+    }
+  </style>
+</head>
+<body>
+  <h1>🏔️ Slopestory Admin Tools</h1>
+
+  <!-- Workflow Section -->
+  <div class="workflow">
+    <div class="workflow-title">📋 Processing Workflow</div>
+    <ol>
+      <li>Check <strong>submission_review</strong> view for new submissions & duplicates</li>
+      <li>Copy Research Prompt → paste to Claude → get JSON</li>
+      <li>Check submitted image quality in Storage → submissions bucket</li>
+      <li>Process Image below → get WebP URL for cover_image_url</li>
+      <li>Ask Claude Code to verify JSON + generate INSERT SQL</li>
+      <li>Run SQL in Supabase, quick app check</li>
+      <li class="auto">✅ Approve: Change status → <strong>approved</strong> (user gets email)</li>
+      <li class="manual">❌ Reject: Change status → <strong>rejected</strong> (no email sent)</li>
+    </ol>
+  </div>
+
+  <!-- Research Prompt Section -->
+  <h2>📝 Research Prompt</h2>
+
+  <div class="prompt-box" id="promptTemplate">
+<h3>Research Request</h3>
+Research the following ski resort and provide accurate, verified data:
+
+<strong>Resort Name:</strong> <input type="text" class="editable" id="resortNameInput" value="[RESORT NAME]" oninput="updatePrompt()">
+<strong>Country:</strong> <input type="text" class="editable" id="countryInput" value="[COUNTRY]" oninput="updatePrompt()">
+
+<h3>Data Required</h3>
+Provide the following information in this exact format. Use NULL if data cannot be found or verified.
+
+<strong>Basic Info</strong>
+- Official Name: (exact name as used by the resort)
+- Country:
+- Country Code: (ISO 3166-1 alpha-2, e.g., US, CA, FR, JP)
+- Region/State/Province:
+- Official Website: (full URL)
+
+<strong>Coordinates</strong>
+- Latitude: (decimal degrees, e.g., 46.8523)
+- Longitude: (decimal degrees, e.g., -121.7603)
+
+<strong>Mountain Stats</strong>
+- Vertical Drop: (meters)
+- Number of Runs/Trails:
+- Number of Lifts:
+- Annual Snowfall: (centimeters)
+
+<strong>Terrain Breakdown</strong> (must total 100%)
+- Beginner %:
+- Intermediate %:
+- Advanced/Expert %:
+
+<strong>Season & Features</strong>
+- Typical Season Open: (month, e.g., "November")
+- Typical Season Close: (month, e.g., "April")
+- Night Skiing: (Yes/No)
+- Pass Affiliation: (Ikon, Epic, Mountain Collective, Indy Pass, or NULL)
+
+<h3>Research Sources</h3>
+1. Resort's official website
+2. Skiresort.info
+3. OnTheSnow.com
+4. Wikipedia
+5. ZRankings.com
+
+<h3>Output Format</h3>
+Return as a JSON object ready for database insertion:
+<div class="json-block">{
+  "name": "",
+  "country": "",
+  "country_code": "",
+  "region": "",
+  "lat": 0.0000,
+  "lng": 0.0000,
+  "website": "",
+  "vertical_m": null,
+  "runs": null,
+  "lifts": null,
+  "annual_snowfall_cm": null,
+  "beginner_pct": null,
+  "intermediate_pct": null,
+  "advanced_pct": null,
+  "pass_affiliation": null,
+  "season_open": null,
+  "season_close": null,
+  "has_night_skiing": null,
+  "verified": false
+}</div>
+<h3>Important Notes</h3>
+- Convert all measurements to metric (meters, centimeters)
+- Coordinates must be precise (at least 4 decimal places)
+- If conflicting data exists, prefer the resort's official website
+- For terrain percentages, round to whole numbers and ensure they total 100%
+- Only include pass affiliations for major multi-resort passes
+  </div>
+
+  <div class="copy-area">
+    <button class="btn-secondary btn-small" id="copyPromptBtn" onclick="copyPrompt()">📋 Copy Prompt</button>
+    <span class="copy-checkmark" id="copyCheck">✓ Copied!</span>
+  </div>
+
+  <!-- Image Processing Section -->
+  <h2>🖼️ Process Image</h2>
+
+  <label>Submission ID <span style="color:#94a3b8">(optional)</span></label>
+  <input type="text" id="submissionId" placeholder="e.g., a1b2c3d4-...">
+  <p class="hint">Leave empty to use Photo URL instead</p>
+
+  <label>Photo URL <span style="color:#94a3b8">(if no Submission ID)</span></label>
+  <input type="text" id="photoUrl" placeholder="https://...">
+
+  <label>Resort Name <span style="color:#dc2626">*</span></label>
+  <input type="text" id="resortName" placeholder="e.g., Kicking Horse">
+  <p class="hint">Use the official name from Claude's JSON — becomes the image filename</p>
+
+  <button id="processBtn" onclick="processImage()">Process Image</button>
+  <div id="result"></div>
+
+  <script>
+    function getPromptText() {
+      const resortName = document.getElementById('resortNameInput').value || '[RESORT NAME]';
+      const country = document.getElementById('countryInput').value || '[COUNTRY]';
+
+      return `Research the following ski resort and provide accurate, verified data:
+
+**Resort Name:** ${resortName}
+**Country:** ${country}
+
+## Data Required
+
+Provide the following information in this exact format. Use NULL if data cannot be found or verified.
+
+### Basic Info
+- **Official Name:** (exact name as used by the resort)
+- **Country:**
+- **Country Code:** (ISO 3166-1 alpha-2, e.g., US, CA, FR, JP)
+- **Region/State/Province:**
+- **Official Website:** (full URL)
+
+### Coordinates
+- **Latitude:** (decimal degrees, e.g., 46.8523)
+- **Longitude:** (decimal degrees, e.g., -121.7603)
+
+### Mountain Stats
+- **Vertical Drop:** (meters)
+- **Number of Runs/Trails:**
+- **Number of Lifts:**
+- **Annual Snowfall:** (centimeters)
+
+### Terrain Breakdown (must total 100%)
+- **Beginner %:**
+- **Intermediate %:**
+- **Advanced/Expert %:**
+
+### Season & Features
+- **Typical Season Open:** (month, e.g., "November" or "Late November")
+- **Typical Season Close:** (month, e.g., "April" or "Early May")
+- **Night Skiing:** (Yes/No)
+- **Pass Affiliation:** (Ikon, Epic, Mountain Collective, Indy Pass, or NULL)
+
+## Research Sources (in order of priority)
+1. Resort's official website
+2. Skiresort.info
+3. OnTheSnow.com
+4. Wikipedia
+5. ZRankings.com
+
+## Output Format
+
+Return as a JSON object ready for database insertion:
+
+{
+  "name": "",
+  "country": "",
+  "country_code": "",
+  "region": "",
+  "lat": 0.0000,
+  "lng": 0.0000,
+  "website": "",
+  "vertical_m": null,
+  "runs": null,
+  "lifts": null,
+  "annual_snowfall_cm": null,
+  "beginner_pct": null,
+  "intermediate_pct": null,
+  "advanced_pct": null,
+  "pass_affiliation": null,
+  "season_open": null,
+  "season_close": null,
+  "has_night_skiing": null,
+  "verified": false
+}
+
+## Important Notes
+- Convert all measurements to metric (meters, centimeters)
+- Coordinates must be precise (at least 4 decimal places)
+- If conflicting data exists, prefer the resort's official website
+- For terrain percentages, round to whole numbers and ensure they total 100%
+- Only include pass affiliations for major multi-resort passes`;
+    }
+
+    function copyPrompt() {
+      const prompt = getPromptText();
+      const btn = document.getElementById('copyPromptBtn');
+      const check = document.getElementById('copyCheck');
+
+      // Try clipboard API with fallback
+      const textarea = document.createElement('textarea');
+      textarea.value = prompt;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+
+      try {
+        document.execCommand('copy');
+
+        // Success animation
+        btn.classList.add('copy-success');
+        check.classList.add('show');
+
+        setTimeout(() => {
+          btn.classList.remove('copy-success');
+        }, 400);
+
+        setTimeout(() => {
+          check.classList.remove('show');
+        }, 2000);
+
+      } catch (e) {
+        alert('Copy failed - please select the text manually');
+      }
+
+      document.body.removeChild(textarea);
+    }
+
+    function copyUrl(url) {
+      const textarea = document.createElement('textarea');
+      textarea.value = url;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      try {
+        document.execCommand('copy');
+        event.target.textContent = 'Copied!';
+        event.target.classList.add('copy-success');
+        setTimeout(() => event.target.classList.remove('copy-success'), 400);
+      } catch (e) {
+        alert('Copy failed. URL: ' + url);
+      }
+      document.body.removeChild(textarea);
+    }
+
+    async function processImage() {
+      const btn = document.getElementById('processBtn');
+      const result = document.getElementById('result');
+      const submissionId = document.getElementById('submissionId').value.trim();
+      const photoUrl = document.getElementById('photoUrl').value.trim();
+      const resortName = document.getElementById('resortName').value.trim();
+
+      if (!resortName) {
+        result.className = 'result error';
+        result.innerHTML = 'Resort name is required';
+        return;
+      }
+
+      if (!submissionId && !photoUrl) {
+        result.className = 'result error';
+        result.innerHTML = 'Either Submission ID or Photo URL is required';
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = 'Processing...';
+      result.className = 'result';
+      result.innerHTML = 'Uploading to Cloudinary, resizing, converting to WebP...';
+
+      try {
+        const body = { resort_name: resortName };
+        if (submissionId) body.submission_id = submissionId;
+        else body.photo_url = photoUrl;
+
+        const response = await fetch('https://rnudbfdhrenesamdjzdk.supabase.co/functions/v1/process-resort-image', {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJudWRiZmRocmVuZXNhbWRqemRrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg2MjEwNTIsImV4cCI6MjA4NDE5NzA1Mn0.oxSYGKF5jkiTCWZblioMxYnKK8d-NGQkp5incBTYi3E',
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(body)
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+          result.className = 'result success';
+          result.innerHTML = `
+            <strong>✅ Success!</strong><br>
+            Compression: ${data.compressionRatio}<br>
+            <div class="url-box">${data.url}</div>
+            <button class="copy-btn" onclick="copyUrl('${data.url}')">Copy URL</button>
+          `;
+        } else {
+          result.className = 'result error';
+          result.innerHTML = '<strong>Error:</strong> ' + JSON.stringify(data);
+        }
+      } catch (e) {
+        result.className = 'result error';
+        result.innerHTML = '<strong>Error:</strong> ' + e.message;
+      }
+
+      btn.disabled = false;
+      btn.textContent = 'Process Image';
+    }
+  </script>
+</body>
+</html>
