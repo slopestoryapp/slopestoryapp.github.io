@@ -545,6 +545,119 @@
     /* Hide elements */
     .hidden { display: none !important; }
 
+    /* Support Ticket Styles */
+    .filter-row {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .filter-row select {
+      padding: 10px 14px;
+      background: var(--slate-dark);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text-primary);
+      font-size: 13px;
+      cursor: pointer;
+      min-width: 140px;
+    }
+
+    .filter-row select:focus {
+      outline: none;
+      border-color: var(--primary);
+    }
+
+    .category-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 500;
+    }
+
+    .category-resort_info { background: rgba(66, 152, 210, 0.15); color: #6DB5DE; }
+    .category-missing_resort { background: rgba(139, 92, 246, 0.15); color: #a78bfa; }
+    .category-bug { background: rgba(239, 68, 68, 0.15); color: #f87171; }
+    .category-feature { background: rgba(34, 197, 94, 0.15); color: #4ade80; }
+    .category-account { background: rgba(251, 191, 36, 0.15); color: #fbbf24; }
+    .category-other { background: rgba(148, 163, 184, 0.15); color: #94a3b8; }
+
+    .status-in_progress { background: rgba(66, 152, 210, 0.15); color: var(--primary); }
+    .status-resolved { background: var(--success-bg); color: var(--success); }
+    .status-closed { background: rgba(100, 116, 139, 0.15); color: #94a3b8; }
+
+    .ticket-item {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .ticket-item:last-child { border-bottom: none; }
+    .ticket-item:hover { background: var(--surface-hover); }
+    .ticket-item.active { background: rgba(66, 152, 210, 0.15); border-left: 3px solid var(--primary); }
+
+    .ticket-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 6px;
+    }
+
+    .ticket-subject {
+      font-weight: 500;
+      flex: 1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .ticket-preview {
+      font-size: 13px;
+      color: var(--text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-bottom: 8px;
+    }
+
+    .ticket-meta {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .ticket-list { max-height: 500px; overflow-y: auto; }
+
+    .message-box {
+      background: var(--slate-darker);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px;
+      font-size: 14px;
+      line-height: 1.6;
+      color: var(--text-secondary);
+      white-space: pre-wrap;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+
+    .status-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .status-actions .btn-sm {
+      flex: 1;
+      min-width: 100px;
+    }
+
     /* Loading spinner */
     .spinner {
       width: 20px;
@@ -632,6 +745,11 @@
         <a class="nav-item" data-page="users">
           <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
           Users
+        </a>
+        <a class="nav-item" data-page="support">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M18.364 5.636l-3.536 3.536m0 5.656l3.536 3.536M9.172 9.172L5.636 5.636m3.536 9.192l-3.536 3.536M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-5 0a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+          Support
+          <span class="nav-badge" id="supportPendingCount">0</span>
         </a>
       </nav>
 
@@ -822,6 +940,82 @@
           </div>
         </div>
       </div>
+
+      <!-- Support Page Content -->
+      <div id="supportPage" class="main-content hidden">
+        <!-- Stats Row -->
+        <div class="grid grid-3" style="margin-bottom: 24px;">
+          <div class="stat-card">
+            <div class="stat-label">Pending</div>
+            <div class="stat-value" id="supportStatPending">-</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">In Progress</div>
+            <div class="stat-value" id="supportStatInProgress">-</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Resolved This Month</div>
+            <div class="stat-value" id="supportStatResolved">-</div>
+          </div>
+        </div>
+
+        <!-- Filters -->
+        <div class="filter-row">
+          <select id="filterCategory" onchange="filterSupportTickets()">
+            <option value="">All Categories</option>
+            <option value="resort_info">Resort Info</option>
+            <option value="missing_resort">Missing Resort</option>
+            <option value="bug">Bug Report</option>
+            <option value="feature">Feature Request</option>
+            <option value="account">Account Issue</option>
+            <option value="other">Other</option>
+          </select>
+          <select id="filterStatus" onchange="filterSupportTickets()">
+            <option value="">All Statuses</option>
+            <option value="pending">Pending</option>
+            <option value="in_progress">In Progress</option>
+            <option value="resolved">Resolved</option>
+            <option value="closed">Closed</option>
+          </select>
+        </div>
+
+        <div class="grid grid-2">
+          <!-- Tickets List -->
+          <div class="card">
+            <div class="card-header">
+              <h2 class="card-title">
+                <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+                Support Tickets
+              </h2>
+              <span style="font-size: 13px; color: var(--text-muted);" id="ticketCount">0 tickets</span>
+            </div>
+            <div class="card-body-flush">
+              <div class="ticket-list" id="ticketList">
+                <div class="empty-state">
+                  <svg fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5m6 4.125l2.25 2.25m0 0l2.25 2.25M12 13.875l2.25-2.25M12 13.875l-2.25 2.25M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z"/></svg>
+                  <p>Loading tickets...</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Ticket Details -->
+          <div class="card" id="ticketDetailsCard">
+            <div class="card-header">
+              <h2 class="card-title">
+                <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                Ticket Details
+              </h2>
+            </div>
+            <div class="card-body" id="ticketDetailsBody">
+              <div class="empty-state">
+                <svg fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.042 21.672L13.684 16.6m0 0l-2.51 2.225.569-9.47 5.227 7.917-3.286-.672zM12 2.25V4.5m5.834.166l-1.591 1.591M20.25 10.5H18M7.757 14.743l-1.59 1.59M6 10.5H3.75m4.007-4.243l-1.59-1.59"/></svg>
+                <p>Select a ticket to view details</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </main>
   </div>
 
@@ -845,6 +1039,12 @@
     // ============ State ============
     let currentSubmission = null;
     let submissions = [];
+    let currentPage = 'submissions';
+
+    // Support state
+    let supportTickets = [];
+    let filteredTickets = [];
+    let currentTicket = null;
 
     // ============ DOM Elements ============
     const $loadingScreen = document.getElementById('loadingScreen');
@@ -904,7 +1104,53 @@
 
       loadSubmissions();
       loadStats();
+      loadSupportTickets();
+      loadSupportStats();
     }
+
+    // ============ Page Navigation ============
+    function navigateToPage(page) {
+      currentPage = page;
+
+      // Update nav items
+      document.querySelectorAll('.nav-item').forEach(item => {
+        item.classList.toggle('active', item.dataset.page === page);
+      });
+
+      // Update header
+      const header = document.querySelector('.main-header');
+      const mainContent = document.querySelector('.main-content:not(#supportPage)');
+      const supportPage = document.getElementById('supportPage');
+      const refreshBtn = document.getElementById('refreshBtn');
+
+      if (page === 'support') {
+        header.querySelector('.page-title').textContent = 'Support Tickets';
+        header.querySelector('.page-subtitle').textContent = 'Manage user support requests and feedback';
+        mainContent.classList.add('hidden');
+        supportPage.classList.remove('hidden');
+        refreshBtn.onclick = () => { loadSupportTickets(); loadSupportStats(); };
+      } else if (page === 'submissions') {
+        header.querySelector('.page-title').textContent = 'Resort Submissions';
+        header.querySelector('.page-subtitle').textContent = 'Review and process new resort requests';
+        mainContent.classList.remove('hidden');
+        supportPage.classList.add('hidden');
+        refreshBtn.onclick = loadSubmissions;
+      } else {
+        // Placeholder for other pages
+        header.querySelector('.page-title').textContent = capitalize(page);
+        header.querySelector('.page-subtitle').textContent = 'Coming soon...';
+        mainContent.classList.add('hidden');
+        supportPage.classList.add('hidden');
+      }
+    }
+
+    // Setup nav click handlers
+    document.querySelectorAll('.nav-item').forEach(item => {
+      item.addEventListener('click', () => {
+        const page = item.dataset.page;
+        if (page) navigateToPage(page);
+      });
+    });
 
     async function signIn() {
       if (!sb) {
@@ -998,6 +1244,312 @@
       } catch (err) {
         console.error('Failed to load stats:', err);
       }
+    }
+
+    // ============ Support Ticket Functions ============
+    async function loadSupportTickets() {
+      if (!sb) return;
+
+      try {
+        const { data, error } = await sb
+          .from('support_requests')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (error) throw error;
+
+        supportTickets = data || [];
+        filterSupportTickets();
+
+        // Update pending badge
+        const pendingCount = supportTickets.filter(t => t.status === 'pending').length;
+        document.getElementById('supportPendingCount').textContent = pendingCount;
+      } catch (err) {
+        console.error('Failed to load support tickets:', err);
+        document.getElementById('ticketList').innerHTML = `
+          <div class="empty-state">
+            <p>Failed to load tickets. Check console for errors.</p>
+          </div>
+        `;
+      }
+    }
+
+    async function loadSupportStats() {
+      if (!sb) return;
+
+      try {
+        const pending = supportTickets.filter(t => t.status === 'pending').length;
+        const inProgress = supportTickets.filter(t => t.status === 'in_progress').length;
+
+        // Get resolved this month
+        const startOfMonth = new Date();
+        startOfMonth.setDate(1);
+        startOfMonth.setHours(0, 0, 0, 0);
+
+        const resolved = supportTickets.filter(t =>
+          t.status === 'resolved' && new Date(t.updated_at) >= startOfMonth
+        ).length;
+
+        document.getElementById('supportStatPending').textContent = pending;
+        document.getElementById('supportStatInProgress').textContent = inProgress;
+        document.getElementById('supportStatResolved').textContent = resolved;
+      } catch (err) {
+        console.error('Failed to load support stats:', err);
+      }
+    }
+
+    function filterSupportTickets() {
+      const category = document.getElementById('filterCategory').value;
+      const status = document.getElementById('filterStatus').value;
+
+      filteredTickets = supportTickets.filter(ticket => {
+        if (category && ticket.category !== category) return false;
+        if (status && ticket.status !== status) return false;
+        return true;
+      });
+
+      renderSupportTickets();
+    }
+
+    function renderSupportTickets() {
+      const list = document.getElementById('ticketList');
+      document.getElementById('ticketCount').textContent = `${filteredTickets.length} ticket${filteredTickets.length !== 1 ? 's' : ''}`;
+
+      if (filteredTickets.length === 0) {
+        list.innerHTML = `
+          <div class="empty-state">
+            <svg fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            <p>No tickets found</p>
+          </div>
+        `;
+        return;
+      }
+
+      list.innerHTML = filteredTickets.map(ticket => `
+        <div class="ticket-item ${currentTicket?.id === ticket.id ? 'active' : ''}" onclick="selectTicket('${ticket.id}')">
+          <div class="ticket-header">
+            <span class="category-badge category-${ticket.category}">${getCategoryIcon(ticket.category)} ${getCategoryLabel(ticket.category)}</span>
+            <span class="status-badge status-${ticket.status}">${getStatusLabel(ticket.status)}</span>
+          </div>
+          <div class="ticket-subject">${escapeHtml(getTicketSubject(ticket))}</div>
+          <div class="ticket-preview">${escapeHtml(ticket.message || '').substring(0, 80)}${(ticket.message || '').length > 80 ? '...' : ''}</div>
+          <div class="ticket-meta">
+            <span>${formatDate(ticket.created_at)}</span>
+            ${ticket.resort_name ? `<span>🏔️ ${escapeHtml(ticket.resort_name)}</span>` : ''}
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function selectTicket(id) {
+      currentTicket = supportTickets.find(t => t.id === id);
+      renderSupportTickets();
+      renderTicketDetails();
+    }
+
+    function renderTicketDetails() {
+      const body = document.getElementById('ticketDetailsBody');
+
+      if (!currentTicket) {
+        body.innerHTML = `
+          <div class="empty-state">
+            <svg fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.042 21.672L13.684 16.6m0 0l-2.51 2.225.569-9.47 5.227 7.917-3.286-.672zM12 2.25V4.5m5.834.166l-1.591 1.591M20.25 10.5H18M7.757 14.743l-1.59 1.59M6 10.5H3.75m4.007-4.243l-1.59-1.59"/></svg>
+            <p>Select a ticket to view details</p>
+          </div>
+        `;
+        return;
+      }
+
+      const t = currentTicket;
+      body.innerHTML = `
+        <div class="detail-panel">
+          <div class="detail-header">
+            <div>
+              <div class="detail-title">${escapeHtml(getTicketSubject(t))}</div>
+              <div class="detail-subtitle">
+                <span class="category-badge category-${t.category}" style="margin-right: 8px;">${getCategoryIcon(t.category)} ${getCategoryLabel(t.category)}</span>
+                <span class="status-badge status-${t.status}">${getStatusLabel(t.status)}</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="detail-grid" style="margin-bottom: 20px;">
+            <div class="detail-item">
+              <label>Ticket ID</label>
+              <p style="font-family: monospace; font-size: 11px;">${t.id}</p>
+            </div>
+            <div class="detail-item">
+              <label>Created</label>
+              <p>${formatDate(t.created_at)}</p>
+            </div>
+            <div class="detail-item">
+              <label>User ID</label>
+              <p style="font-family: monospace; font-size: 11px;">${t.user_id || 'Anonymous'}</p>
+            </div>
+            <div class="detail-item">
+              <label>Last Updated</label>
+              <p>${formatDate(t.updated_at)}</p>
+            </div>
+            ${t.resort_name ? `
+              <div class="detail-item">
+                <label>Resort Name</label>
+                <p>${escapeHtml(t.resort_name)}</p>
+              </div>
+            ` : ''}
+            ${t.resort_id ? `
+              <div class="detail-item">
+                <label>Resort ID</label>
+                <p style="font-family: monospace; font-size: 11px;">${t.resort_id}</p>
+              </div>
+            ` : ''}
+            ${t.screen_feature ? `
+              <div class="detail-item">
+                <label>Screen/Feature</label>
+                <p>${escapeHtml(t.screen_feature)}</p>
+              </div>
+            ` : ''}
+            ${t.feature_title ? `
+              <div class="detail-item">
+                <label>Feature Title</label>
+                <p>${escapeHtml(t.feature_title)}</p>
+              </div>
+            ` : ''}
+            ${t.issue_type ? `
+              <div class="detail-item">
+                <label>Issue Type</label>
+                <p>${escapeHtml(t.issue_type)}</p>
+              </div>
+            ` : ''}
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Message</label>
+            <div class="message-box">${escapeHtml(t.message || 'No message provided')}</div>
+          </div>
+
+          ${t.steps_to_reproduce ? `
+            <div class="form-group">
+              <label class="form-label">Steps to Reproduce</label>
+              <div class="message-box">${escapeHtml(t.steps_to_reproduce)}</div>
+            </div>
+          ` : ''}
+
+          ${t.why_useful ? `
+            <div class="form-group">
+              <label class="form-label">Why Useful</label>
+              <div class="message-box">${escapeHtml(t.why_useful)}</div>
+            </div>
+          ` : ''}
+
+          ${t.device_info ? `
+            <div class="form-group">
+              <label class="form-label">Device Info</label>
+              <div class="message-box">${JSON.stringify(t.device_info, null, 2)}</div>
+            </div>
+          ` : ''}
+
+          <div class="action-row">
+            <div class="status-actions">
+              ${t.status !== 'in_progress' ? `
+                <button class="btn btn-sm" onclick="updateTicketStatus('in_progress')">
+                  <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                  In Progress
+                </button>
+              ` : ''}
+              ${t.status !== 'resolved' ? `
+                <button class="btn btn-success btn-sm" onclick="updateTicketStatus('resolved')">
+                  <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+                  Resolved
+                </button>
+              ` : ''}
+              ${t.status !== 'closed' ? `
+                <button class="btn btn-secondary btn-sm" onclick="updateTicketStatus('closed')">
+                  <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                  Close
+                </button>
+              ` : ''}
+              ${t.status !== 'pending' ? `
+                <button class="btn btn-secondary btn-sm" onclick="updateTicketStatus('pending')">
+                  Reopen
+                </button>
+              ` : ''}
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    async function updateTicketStatus(newStatus) {
+      if (!currentTicket || !sb) return;
+
+      try {
+        const { error } = await sb
+          .from('support_requests')
+          .update({ status: newStatus, updated_at: new Date().toISOString() })
+          .eq('id', currentTicket.id);
+
+        if (error) throw error;
+
+        // Update local state
+        currentTicket.status = newStatus;
+        currentTicket.updated_at = new Date().toISOString();
+        const idx = supportTickets.findIndex(t => t.id === currentTicket.id);
+        if (idx !== -1) supportTickets[idx] = currentTicket;
+
+        filterSupportTickets();
+        renderTicketDetails();
+        loadSupportStats();
+
+        // Update nav badge
+        const pendingCount = supportTickets.filter(t => t.status === 'pending').length;
+        document.getElementById('supportPendingCount').textContent = pendingCount;
+      } catch (err) {
+        console.error('Failed to update ticket status:', err);
+        alert('Failed to update status: ' + err.message);
+      }
+    }
+
+    // Support helper functions
+    function getCategoryIcon(category) {
+      const icons = {
+        resort_info: '🏔️',
+        missing_resort: '➕',
+        bug: '🐛',
+        feature: '💡',
+        account: '👤',
+        other: '💬'
+      };
+      return icons[category] || '📋';
+    }
+
+    function getCategoryLabel(category) {
+      const labels = {
+        resort_info: 'Resort Info',
+        missing_resort: 'Missing Resort',
+        bug: 'Bug Report',
+        feature: 'Feature Request',
+        account: 'Account',
+        other: 'Other'
+      };
+      return labels[category] || category;
+    }
+
+    function getStatusLabel(status) {
+      const labels = {
+        pending: 'Pending',
+        in_progress: 'In Progress',
+        resolved: 'Resolved',
+        closed: 'Closed'
+      };
+      return labels[status] || status;
+    }
+
+    function getTicketSubject(ticket) {
+      if (ticket.subject) return ticket.subject;
+      if (ticket.feature_title) return ticket.feature_title;
+      if (ticket.resort_name) return `${getCategoryLabel(ticket.category)}: ${ticket.resort_name}`;
+      if (ticket.screen_feature) return `Bug in ${ticket.screen_feature}`;
+      return getCategoryLabel(ticket.category);
     }
 
     function renderSubmissions() {
@@ -1191,6 +1743,13 @@ Provide the following information. Use NULL if data cannot be found.
 - Season Open/Close months, Night Skiing (Yes/No)
 - Pass Affiliation (Ikon, Epic, Mountain Collective, Indy Pass, or NULL)
 
+<strong>Social Media</strong>
+- Instagram Handle (official resort account, without @)
+
+<strong>Description</strong>
+- Write 1-2 engaging sentences about what makes this resort unique or special
+- Focus on: record-breaking stats, famous events hosted, unique terrain features, or interesting history
+
 <strong>Output as JSON:</strong>
 {
   "name": "", "country": "", "country_code": "", "region": "",
@@ -1200,6 +1759,8 @@ Provide the following information. Use NULL if data cannot be found.
   "intermediate_pct": null, "advanced_pct": null,
   "pass_affiliation": null, "season_open": null,
   "season_close": null, "has_night_skiing": null,
+  "instagram_handle": null,
+  "description": null,
   "verified": false
 }`;
 
@@ -1246,6 +1807,13 @@ Provide the following information. Use NULL if data cannot be found or verified.
 - Night Skiing (Yes/No)
 - Pass Affiliation (Ikon, Epic, Mountain Collective, Indy Pass, or NULL)
 
+### Social Media
+- Instagram Handle (official resort account, without @)
+
+### Description
+- Write 1-2 engaging sentences about what makes this resort unique
+- Focus on: record-breaking stats, famous events, unique terrain, or interesting history
+
 ## Research Sources (priority order)
 1. Resort's official website
 2. Skiresort.info
@@ -1274,6 +1842,8 @@ Return as JSON ready for database insertion:
   "season_open": null,
   "season_close": null,
   "has_night_skiing": null,
+  "instagram_handle": null,
+  "description": null,
   "verified": false
 }
 
