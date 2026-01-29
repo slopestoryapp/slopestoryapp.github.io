@@ -1,0 +1,822 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SlopeStory - Remember Your Ski Adventures</title>
+  <meta name="description" content="Sort your ski and snowboard stories, collect resorts and create a memorable book. Coming soon to iOS.">
+
+  <!-- Open Graph -->
+  <meta property="og:title" content="SlopeStory - Remember Your Ski Adventures">
+  <meta property="og:description" content="Sort your ski and snowboard stories, collect resorts and create a memorable book.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://app.slopestory.com/waitlist">
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="/assets/favicon.png">
+
+
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      background: #FFFFFF;
+      min-height: 100vh;
+      color: #1E2936;
+      line-height: 1.6;
+    }
+
+    /* Hero Section */
+    .hero {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 48px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Subtle background gradient */
+    .hero::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background:
+        radial-gradient(circle at 0% 100%, rgba(66, 152, 210, 0.06) 0%, transparent 50%),
+        radial-gradient(circle at 100% 0%, rgba(66, 152, 210, 0.04) 0%, transparent 50%);
+      pointer-events: none;
+    }
+
+    .hero-container {
+      position: relative;
+      z-index: 1;
+      max-width: 1100px;
+      width: 100%;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 32px;
+      align-items: center;
+    }
+
+    /* Left Column - Content */
+    .hero-content {
+      max-width: 520px;
+    }
+
+    /* App Icon + Brand */
+    .brand-row {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 32px;
+    }
+
+    .app-icon {
+      width: 64px;
+      height: 64px;
+      background: #1E2936;
+      border-radius: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 12px rgba(30, 41, 54, 0.2);
+    }
+
+    .app-icon img {
+      width: 42px;
+      height: 42px;
+      filter: brightness(1.5) contrast(1.1);
+    }
+
+    .brand-name {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #1E2936;
+      letter-spacing: -0.5px;
+    }
+
+    h1 {
+      font-size: clamp(2.25rem, 5vw, 3rem);
+      font-weight: 800;
+      line-height: 1.15;
+      margin-bottom: 16px;
+      color: #1E2936;
+      letter-spacing: -1px;
+    }
+
+    .tagline {
+      font-size: 1.125rem;
+      color: #5A7286;
+      margin-bottom: 40px;
+      line-height: 1.7;
+    }
+
+    /* Form Card */
+    .form-card {
+      background: #F8FAFC;
+      border: 1px solid #E2E8F0;
+      border-radius: 20px;
+      padding: 28px;
+      margin-bottom: 28px;
+    }
+
+    .form-title {
+      font-size: 1rem;
+      font-weight: 600;
+      margin-bottom: 16px;
+      color: #1E2936;
+    }
+
+    .input-group {
+      display: flex;
+      gap: 12px;
+    }
+
+    input[type="email"] {
+      flex: 1;
+      padding: 14px 18px;
+      font-size: 1rem;
+      border: 2px solid #E2E8F0;
+      border-radius: 12px;
+      background: #FFFFFF;
+      color: #1E2936;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    input[type="email"]::placeholder {
+      color: #94A3B8;
+    }
+
+    input[type="email"]:focus {
+      border-color: #4298D2;
+      box-shadow: 0 0 0 4px rgba(66, 152, 210, 0.1);
+    }
+
+    button {
+      padding: 14px 24px;
+      font-size: 1rem;
+      font-weight: 600;
+      color: #FFFFFF;
+      background: #4298D2;
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.15s, box-shadow 0.2s;
+      white-space: nowrap;
+    }
+
+    button:hover {
+      background: #3687C1;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 16px rgba(66, 152, 210, 0.3);
+    }
+
+    button:active {
+      transform: translateY(0);
+    }
+
+    button:disabled {
+      background: #94A3B8;
+      cursor: not-allowed;
+      transform: none;
+      box-shadow: none;
+    }
+
+    .message {
+      margin-top: 14px;
+      padding: 12px 16px;
+      border-radius: 10px;
+      font-size: 0.875rem;
+      display: none;
+    }
+
+    .message.success {
+      display: block;
+      background: rgba(34, 197, 94, 0.1);
+      color: #16A34A;
+      border: 1px solid rgba(34, 197, 94, 0.2);
+    }
+
+    .message.error {
+      display: block;
+      background: rgba(239, 68, 68, 0.1);
+      color: #DC2626;
+      border: 1px solid rgba(239, 68, 68, 0.2);
+    }
+
+    /* Speech bubble validation tooltip */
+    .validation-bubble {
+      position: absolute;
+      bottom: calc(100% + 12px);
+      left: 50%;
+      transform: translateX(-50%);
+      background: #1E2936;
+      color: #FFFFFF;
+      padding: 10px 16px;
+      border-radius: 12px;
+      font-size: 0.875rem;
+      font-weight: 500;
+      white-space: nowrap;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+      z-index: 100;
+      animation: bubblePop 0.25s ease-out;
+    }
+
+    .validation-bubble::after {
+      content: '';
+      position: absolute;
+      top: 100%;
+      left: 50%;
+      transform: translateX(-50%);
+      border: 8px solid transparent;
+      border-top-color: #1E2936;
+    }
+
+    @keyframes bubblePop {
+      0% {
+        opacity: 0;
+        transform: translateX(-50%) translateY(8px) scale(0.9);
+      }
+      100% {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0) scale(1);
+      }
+    }
+
+    input[type="email"]:invalid:not(:placeholder-shown) {
+      border-color: #4298D2;
+    }
+
+    /* Floating success animation */
+    .float-message {
+      position: absolute;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 1rem;
+      font-weight: 600;
+      color: #4298D2;
+      pointer-events: none;
+      white-space: nowrap;
+      animation: floatUp 2s ease-out forwards;
+      z-index: 100;
+    }
+
+    @keyframes floatUp {
+      0% {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+      }
+      100% {
+        opacity: 0;
+        transform: translateX(-50%) translateY(-60px);
+      }
+    }
+
+    /* Social */
+    .social-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: #5A7286;
+      text-decoration: none;
+      font-size: 0.9375rem;
+      font-weight: 500;
+      transition: color 0.2s;
+    }
+
+    .social-link:hover {
+      color: #4298D2;
+    }
+
+    .social-link svg {
+      width: 20px;
+      height: 20px;
+    }
+
+    /* Right Column - Phone Mockup */
+    .hero-phone {
+      position: relative;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .phone-container {
+      position: relative;
+      width: 300px;
+      height: 612px;
+      transform-style: preserve-3d;
+      transition: transform 0.15s ease-out;
+    }
+
+    .hero-phone {
+      perspective: 1000px;
+    }
+
+
+    .phone-screen {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      right: 10px;
+      bottom: 10px;
+      border-radius: 34px;
+      overflow: hidden;
+      perspective: 1000px;
+      background: #000;
+      border: 6px solid #000;
+    }
+
+    .video-flipper {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      transition: transform 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+      transform-style: preserve-3d;
+    }
+
+    .video-flipper.flipped {
+      transform: rotateY(180deg);
+    }
+
+    .video-front,
+    .video-back {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      backface-visibility: hidden;
+      -webkit-backface-visibility: hidden;
+    }
+
+    .video-back {
+      transform: rotateY(180deg);
+    }
+
+    .video-front video,
+    .video-back video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    /* iPhone frame */
+    .iphone-frame {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      border: 12px solid #1E2936;
+      border-radius: 44px;
+      z-index: 30;
+      pointer-events: none;
+      box-shadow:
+        0 0 0 2px #374757,
+        0 25px 80px rgba(30, 41, 54, 0.4);
+    }
+
+    .home-indicator {
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 100px;
+      height: 5px;
+      background: #1E2936;
+      border-radius: 3px;
+      z-index: 31;
+    }
+
+    /* Footer */
+    .footer {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      padding: 20px 48px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.8125rem;
+      color: #94A3B8;
+    }
+
+    .footer a {
+      color: #5A7286;
+      text-decoration: none;
+      transition: color 0.2s;
+    }
+
+    .footer a:hover {
+      color: #4298D2;
+    }
+
+    .footer-links {
+      display: flex;
+      gap: 24px;
+    }
+
+    /* Responsive */
+    @media (max-width: 960px) {
+      .hero {
+        padding: 32px 24px;
+        padding-bottom: 100px;
+      }
+
+      .hero-container {
+        grid-template-columns: 1fr;
+        gap: 48px;
+        text-align: center;
+      }
+
+      .hero-content {
+        max-width: 100%;
+        order: 1;
+      }
+
+      .brand-row {
+        justify-content: center;
+      }
+
+      .hero-phone {
+        order: 2;
+      }
+
+      .phone-container {
+        width: 280px;
+        height: 571px;
+      }
+
+      .phone-screen {
+        top: 11px;
+        left: 11px;
+        right: 11px;
+        bottom: 11px;
+        border-radius: 31px;
+        border-width: 5px;
+      }
+
+      .footer {
+        position: relative;
+        flex-direction: column;
+        gap: 12px;
+        padding: 24px;
+      }
+    }
+
+    @media (max-width: 540px) {
+      .hero {
+        padding: 24px 16px;
+        padding-bottom: 120px;
+      }
+
+      h1 {
+        font-size: 1.875rem;
+      }
+
+      .input-group {
+        flex-direction: column;
+      }
+
+      button {
+        width: 100%;
+      }
+
+      .phone-container {
+        width: 240px;
+        height: 490px;
+      }
+
+      .iphone-frame {
+        border-width: 10px;
+        border-radius: 38px;
+      }
+
+      .phone-screen {
+        top: 8px;
+        left: 8px;
+        right: 8px;
+        bottom: 8px;
+        border-radius: 28px;
+        border-width: 4px;
+      }
+
+      .validation-bubble {
+        font-size: 0.8rem;
+        padding: 8px 12px;
+      }
+
+      .tagline {
+        font-size: 1rem;
+      }
+
+      .brand-name {
+        font-size: 1.25rem;
+      }
+
+      .app-icon {
+        width: 52px;
+        height: 52px;
+      }
+
+      .app-icon img {
+        width: 34px;
+        height: 34px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <section class="hero">
+    <div class="hero-container">
+      <!-- Left Column -->
+      <div class="hero-content">
+        <div class="brand-row">
+          <div class="app-icon">
+            <img src="/assets/logo-light.png" alt="SlopeStory">
+          </div>
+          <span class="brand-name">Slopestory</span>
+        </div>
+
+        <h1>Remember your ski adventures</h1>
+        <p class="tagline">Sort your ski and snowboard stories, collect resorts and create a memorable book.</p>
+
+        <div class="form-card">
+          <p class="form-title">Get early access</p>
+          <form id="waitlist-form" class="input-group" novalidate>
+            <input
+              type="email"
+              id="email"
+              name="email"
+              placeholder="Enter your email"
+              required
+              autocomplete="email"
+            >
+            <button type="submit" id="submit-btn">Join Waitlist</button>
+          </form>
+          <div id="message" class="message"></div>
+        </div>
+
+        <a href="https://instagram.com/slopestoryapp" target="_blank" rel="noopener" class="social-link">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/>
+          </svg>
+          @slopestoryapp
+        </a>
+      </div>
+
+      <!-- Right Column - Phone -->
+      <div class="hero-phone">
+        <div class="phone-container">
+          <!-- App preview videos with flip transition -->
+          <div class="phone-screen">
+            <div class="video-flipper" id="video-flipper">
+              <div class="video-front">
+                <video
+                  id="video-1"
+                  muted
+                  playsinline
+                  src="https://rnudbfdhrenesamdjzdk.supabase.co/storage/v1/object/public/brand-assets/Welcomescreen.mov"
+                ></video>
+              </div>
+              <div class="video-back">
+                <video
+                  id="video-2"
+                  muted
+                  playsinline
+                  src="https://rnudbfdhrenesamdjzdk.supabase.co/storage/v1/object/public/brand-assets/Mapscreen.mov"
+                ></video>
+              </div>
+            </div>
+          </div>
+
+          <!-- iPhone frame -->
+          <div class="iphone-frame"></div>
+          <div class="home-indicator"></div>
+        </div>
+      </div>
+    </div>
+
+    <footer class="footer">
+      <span>&copy; 2026 Slopestory</span>
+      <div class="footer-links">
+        <a href="#" class="legal-link" onclick="showComingSoon(event)">Privacy Policy</a>
+        <a href="#" class="legal-link" onclick="showComingSoon(event)">Terms of Service</a>
+      </div>
+    </footer>
+  </section>
+
+  <script>
+    // ============================================
+    // CONFIGURATION
+    // ============================================
+    const SUPABASE_URL = 'https://rnudbfdhrenesamdjzdk.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJudWRiZmRocmVuZXNhbWRqemRrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg2MjEwNTIsImV4cCI6MjA4NDE5NzA1Mn0.oxSYGKF5jkiTCWZblioMxYnKK8d-NGQkp5incBTYi3E';
+    // ============================================
+
+    // Phone tilt effect on mouse move
+    document.addEventListener('DOMContentLoaded', () => {
+      const phoneContainer = document.querySelector('.phone-container');
+      const heroPhone = document.querySelector('.hero-phone');
+
+      const maxTilt = 15; // Max tilt angle in degrees
+
+      heroPhone.addEventListener('mousemove', (e) => {
+        const rect = heroPhone.getBoundingClientRect();
+        const centerX = rect.left + rect.width / 2;
+        const centerY = rect.top + rect.height / 2;
+
+        // Calculate mouse position relative to center (-1 to 1)
+        const mouseX = (e.clientX - centerX) / (rect.width / 2);
+        const mouseY = (e.clientY - centerY) / (rect.height / 2);
+
+        // Apply tilt (inverted Y for natural feel)
+        const tiltX = -mouseY * maxTilt;
+        const tiltY = mouseX * maxTilt;
+
+        phoneContainer.style.transform = `rotateX(${tiltX}deg) rotateY(${tiltY}deg)`;
+      });
+
+      heroPhone.addEventListener('mouseleave', () => {
+        // Reset to neutral position
+        phoneContainer.style.transform = 'rotateX(0deg) rotateY(0deg)';
+      });
+    });
+
+    // Video flip logic with smooth transitions
+    document.addEventListener('DOMContentLoaded', () => {
+      const flipper = document.getElementById('video-flipper');
+      const video1 = document.getElementById('video-1');
+      const video2 = document.getElementById('video-2');
+
+      // Start first video
+      video1.play();
+
+      // When video 1 ends, flip to video 2
+      video1.addEventListener('ended', () => {
+        // Start video 2 immediately (while still hidden behind flip)
+        video2.currentTime = 0;
+        video2.play();
+        // Start flip animation - by the time it completes (~0.8s),
+        // video 2 will already be playing smoothly
+        flipper.classList.add('flipped');
+      });
+
+      // When video 2 ends, flip back to video 1
+      video2.addEventListener('ended', () => {
+        // Start video 1 immediately (while still hidden behind flip)
+        video1.currentTime = 0;
+        video1.play();
+        // Start flip animation
+        flipper.classList.remove('flipped');
+      });
+    });
+
+    // Coming soon bubble for legal links
+    function showComingSoon(event) {
+      event.preventDefault();
+
+      // Remove any existing bubble
+      const existing = document.querySelector('.coming-soon-bubble');
+      if (existing) existing.remove();
+
+      const bubble = document.createElement('div');
+      bubble.className = 'validation-bubble coming-soon-bubble';
+      bubble.textContent = 'Coming soon!';
+      bubble.style.bottom = 'auto';
+      bubble.style.top = 'auto';
+
+      // Position above the clicked link
+      const link = event.target;
+      const rect = link.getBoundingClientRect();
+
+      bubble.style.position = 'fixed';
+      bubble.style.left = rect.left + rect.width / 2 + 'px';
+      bubble.style.top = (rect.top - 50) + 'px';
+
+      document.body.appendChild(bubble);
+
+      // Remove after 2 seconds
+      setTimeout(() => {
+        bubble.style.animation = 'bubblePop 0.2s ease-in reverse forwards';
+        setTimeout(() => bubble.remove(), 200);
+      }, 2000);
+    }
+
+    // Validation speech bubble
+    function showValidationBubble(text) {
+      // Remove any existing bubble
+      const existing = document.querySelector('.validation-bubble');
+      if (existing) existing.remove();
+
+      const bubble = document.createElement('div');
+      bubble.className = 'validation-bubble';
+      bubble.textContent = text;
+
+      // Position relative to input group
+      const inputGroup = document.querySelector('.input-group');
+      inputGroup.style.position = 'relative';
+      inputGroup.appendChild(bubble);
+
+      // Remove after 3 seconds
+      setTimeout(() => {
+        bubble.style.animation = 'bubblePop 0.2s ease-in reverse forwards';
+        setTimeout(() => bubble.remove(), 200);
+      }, 3000);
+    }
+
+    // Floating message animation
+    function showFloatingMessage(text, parentElement) {
+      const floater = document.createElement('div');
+      floater.className = 'float-message';
+      floater.textContent = text;
+
+      // Position relative to parent
+      parentElement.style.position = 'relative';
+      floater.style.top = '0';
+      parentElement.appendChild(floater);
+
+      // Remove after animation completes
+      setTimeout(() => {
+        floater.remove();
+      }, 2000);
+    }
+
+    // Waitlist form submission
+    const form = document.getElementById('waitlist-form');
+    const emailInput = document.getElementById('email');
+    const submitBtn = document.getElementById('submit-btn');
+    const message = document.getElementById('message');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const email = emailInput.value.trim();
+
+      // Custom validation with speech bubble
+      if (!email) {
+        showValidationBubble("Please enter your email address");
+        emailInput.focus();
+        return;
+      }
+
+      if (!email.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) {
+        showValidationBubble("Please enter a valid email address");
+        emailInput.focus();
+        return;
+      }
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Joining...';
+      message.className = 'message';
+      message.style.display = 'none';
+
+      try {
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/waitlist`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+            'Prefer': 'return=minimal'
+          },
+          body: JSON.stringify({ email })
+        });
+
+        if (response.ok) {
+          // Create floating animation
+          showFloatingMessage("🎉 Congratz! You're on the list!", form);
+          message.textContent = "We'll notify you when we launch.";
+          message.className = 'message success';
+          emailInput.value = '';
+        } else if (response.status === 409) {
+          message.textContent = "You're already on the waitlist!";
+          message.className = 'message success';
+        } else {
+          throw new Error('Failed to join');
+        }
+      } catch (error) {
+        message.textContent = 'Something went wrong. Please try again.';
+        message.className = 'message error';
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Join Waitlist';
+      }
+    });
+  </script>
+</body>
+</html>
