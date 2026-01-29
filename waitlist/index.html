@@ -623,8 +623,8 @@
     <footer class="footer">
       <span>&copy; 2026 Slopestory</span>
       <div class="footer-links">
-        <a href="/privacy-policy.html">Privacy Policy</a>
-        <a href="/terms-of-service.html">Terms of Service</a>
+        <a href="#" onclick="showComingSoon(event)">Privacy Policy</a>
+        <a href="#" onclick="showComingSoon(event)">Terms of Service</a>
       </div>
     </footer>
   </div>
@@ -681,6 +681,29 @@
       floater.style.top = '0';
       parent.appendChild(floater);
       setTimeout(() => floater.remove(), 2000);
+    }
+
+    // Coming soon popup for legal links
+    function showComingSoon(event) {
+      event.preventDefault();
+      document.querySelectorAll('.coming-soon-bubble').forEach(b => b.remove());
+
+      const bubble = document.createElement('div');
+      bubble.className = 'validation-bubble coming-soon-bubble';
+      bubble.textContent = 'Coming soon!';
+      bubble.style.position = 'fixed';
+
+      const rect = event.target.getBoundingClientRect();
+      bubble.style.left = rect.left + rect.width / 2 + 'px';
+      bubble.style.top = (rect.top - 50) + 'px';
+      bubble.style.bottom = 'auto';
+
+      document.body.appendChild(bubble);
+
+      setTimeout(() => {
+        bubble.style.animation = 'bubblePop 0.2s ease-in reverse forwards';
+        setTimeout(() => bubble.remove(), 200);
+      }, 2000);
     }
 
     // Form
