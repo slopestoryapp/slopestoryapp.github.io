@@ -15,6 +15,15 @@
   <!-- Favicon - Mountain logo -->
   <link rel="icon" type="image/png" href="/assets/logo-light.png">
 
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-VRNW0X7NRJ"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-VRNW0X7NRJ');
+  </script>
+
   <style>
     * {
       margin: 0;
@@ -732,11 +741,17 @@
         });
 
         if (res.ok) {
+          if (typeof gtag === 'function') {
+            gtag('event', 'generate_lead', { event_category: 'conversion', event_label: 'Waitlist signup' });
+          }
           showFloatingMessage("You're on the list!", form);
           message.textContent = "We'll notify you when we launch.";
           message.className = 'message success';
           emailInput.value = '';
         } else if (res.status === 409) {
+          if (typeof gtag === 'function') {
+            gtag('event', 'generate_lead', { event_category: 'conversion', event_label: 'Waitlist signup (already on list)' });
+          }
           message.textContent = "You're already on the waitlist!";
           message.className = 'message success';
         } else { throw new Error(); }
