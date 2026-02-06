@@ -1268,6 +1268,7 @@
     let roadmapRows = [];
     let roadmapEditingId = null;
     let roadmapAddUnderParentId = null;
+    let roadmapDragSetupDone = false;
 
     // Feature photos state
     let featurePhotos = [];
@@ -1361,6 +1362,10 @@
         header.querySelector('.page-subtitle').textContent = 'Manage branches and features (app & waitlist)';
         roadmapPage.classList.remove('hidden');
         refreshBtn.onclick = loadRoadmap;
+        if (!roadmapDragSetupDone) {
+          setupRoadmapDragAndDrop(document.getElementById('roadmapTree'));
+          roadmapDragSetupDone = true;
+        }
         loadRoadmap();
       } else if (page === 'support') {
         header.querySelector('.page-title').textContent = 'Support Tickets';
@@ -2050,7 +2055,6 @@
       });
       if (branches.length === 0) html = '<div class="roadmap-empty">No branches yet. Click "+ Add branch" to create one.</div>';
       treeEl.innerHTML = html;
-      setupRoadmapDragAndDrop(treeEl);
     }
 
     function setupRoadmapDragAndDrop(container) {
