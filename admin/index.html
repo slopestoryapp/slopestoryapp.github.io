@@ -821,6 +821,11 @@
           Resort Submissions
           <span class="nav-badge" id="pendingCount">0</span>
         </a>
+        <a class="nav-item" data-page="feature-photos">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+          Feature Photos
+          <span class="nav-badge" id="featurePhotosPendingCount">0</span>
+        </a>
         <a class="nav-item" data-page="resorts">
           <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
           Resorts
@@ -867,7 +872,7 @@
         </button>
       </header>
 
-      <div class="main-content">
+      <div class="main-content" id="submissionsPage">
         <!-- Stats Row -->
         <div class="grid grid-3" style="margin-bottom: 24px;">
           <div class="stat-card">
@@ -1023,6 +1028,62 @@
                 Process Image
               </button>
               <div id="imageResult"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Feature Photos Page Content -->
+      <div id="featurePhotosPage" class="main-content hidden">
+        <div class="grid grid-3" style="margin-bottom: 24px;">
+          <div class="stat-card">
+            <div class="stat-label">Pending Review</div>
+            <div class="stat-value" id="featurePhotosStatPending">-</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Approved This Month</div>
+            <div class="stat-value" id="featurePhotosStatApproved">-</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Total Submissions</div>
+            <div class="stat-value" id="featurePhotosStatTotal">-</div>
+          </div>
+        </div>
+
+        <div class="grid grid-2">
+          <div class="card">
+            <div class="card-header">
+              <h2 class="card-title">
+                <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                Pending Feature Photos
+              </h2>
+              <button class="btn-refresh" onclick="loadFeaturePhotos()" id="featurePhotosRefreshBtn">
+                <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                Refresh
+              </button>
+            </div>
+            <div class="card-body-flush">
+              <div class="submission-list" id="featurePhotoList">
+                <div class="empty-state">
+                  <svg fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5m6 4.125l2.25 2.25m0 0l2.25 2.25M12 13.875l2.25-2.25M12 13.875l-2.25 2.25M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z"/></svg>
+                  <p>Loading...</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card" id="featurePhotoDetailsCard">
+            <div class="card-header">
+              <h2 class="card-title">
+                <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                Submission Details
+              </h2>
+            </div>
+            <div class="card-body" id="featurePhotoDetailsBody">
+              <div class="empty-state">
+                <svg fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.042 21.672L13.684 16.6m0 0l-2.51 2.225.569-9.47 5.227 7.917-3.286-.672zM12 2.25V4.5m5.834.166l-1.591 1.591M20.25 10.5H18M7.757 14.743l-1.59 1.59M6 10.5H3.75m4.007-4.243l-1.59-1.59"/></svg>
+                <p>Select a submission to view details and approve or reject</p>
+              </div>
             </div>
           </div>
         </div>
@@ -1866,7 +1927,7 @@
       var id = btn.dataset.id;
       var name = (btn.dataset.name || '').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&');
       var display = name || id;
-      if (!confirm("Delete \"" + display + "\"? Deleting a branch will also remove all its features.")) return;
+      if (!confirm('Delete “‘ + display + '”? Deleting a branch will also remove all its features.')) return;
       if (!sb) return;
       try {
         const { error } = await sb.from('app_features').delete().eq('id', id);
