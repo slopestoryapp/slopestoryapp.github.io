@@ -51,7 +51,7 @@
       color: #FFFFFF;
     }
 
-    /* Tab splitter - flush top, no divider */
+    /* Tab splitter - fixed at top of viewport (does not scroll) */
     .tab-splitter {
       position: fixed;
       top: 0;
@@ -97,18 +97,18 @@
       border: none;
       background: transparent;
       border-radius: 999px;
-      transition: color 0.25s ease, background 0.25s cubic-bezier(0.4, 0, 0.2, 1), transform 0.2s ease;
+      transition: color 0.2s ease, background 0.25s cubic-bezier(0.4, 0, 0.2, 1);
       -webkit-tap-highlight-color: transparent;
     }
 
     .tab-option:hover:not(.active) {
-      color: #1E2936;
-      background: rgba(255, 255, 255, 0.6);
+      color: #475569;
+      background: transparent;
     }
 
     body.slope-active .tab-option:hover:not(.active) {
-      color: #E2E8F0;
-      background: rgba(255, 255, 255, 0.1);
+      color: #B8C5D0;
+      background: transparent;
     }
 
     .tab-option.active {
@@ -133,7 +133,7 @@
 
     /* Main container */
     .page {
-      min-height: 100%;
+      min-height: 100vh;
       display: flex;
       flex-direction: column;
       padding: 48px;
@@ -154,11 +154,16 @@
       display: none;
       flex: 1;
       flex-direction: column;
+      min-height: 0;
       animation: panelIn 0.35s ease-out;
     }
 
     .panel.active {
       display: flex;
+    }
+
+    .panel.panel-waitlist.active {
+      min-height: calc(100vh - 76px);
     }
 
     @keyframes panelIn {
@@ -736,19 +741,11 @@
       margin-bottom: 8px;
     }
 
-    .slope-tagline {
-      font-size: 1rem;
-      color: #94A3B8;
-      max-width: 420px;
-      margin: 0 auto;
-      line-height: 1.6;
-    }
-
     .slope-canny {
       font-size: 0.9375rem;
       color: #94A3B8;
       max-width: 480px;
-      margin: 16px auto 0;
+      margin: 8px auto 0;
       line-height: 1.6;
     }
 
@@ -944,7 +941,6 @@
           </svg>
         </div>
         <h2 class="slope-title">The Slope</h2>
-        <p class="slope-tagline">What we've built, what we're working on, and what's next. Same view as in the app.</p>
         <p class="slope-canny">
           Have a feature idea? <a href="https://slopestory.canny.io/feature-requests" target="_blank" rel="noopener">Vote and suggest on our Feature requests board</a> and help shape what we build.
         </p>
