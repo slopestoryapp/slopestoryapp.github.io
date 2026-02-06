@@ -2132,7 +2132,7 @@
       var id = btn.dataset.id;
       var name = (btn.dataset.name || '').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&');
       var display = name || id;
-      if (!confirm('Delete “‘ + display + '”? Deleting a branch will also remove all its features.')) return;
+      if (!confirm("Delete \"" + display + "\"? Deleting a branch will also remove all its features.")) return;
       if (!sb) return;
       try {
         const { error } = await sb.from('app_features').delete().eq('id', id);
