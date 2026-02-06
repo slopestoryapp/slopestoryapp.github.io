@@ -51,7 +51,7 @@
       color: #FFFFFF;
     }
 
-    /* Tab splitter - top center */
+    /* Tab splitter - flush top, no divider */
     .tab-splitter {
       position: fixed;
       top: 0;
@@ -60,70 +60,71 @@
       z-index: 100;
       display: flex;
       justify-content: center;
-      padding: 20px 24px 16px;
-      background: rgba(255, 255, 255, 0.9);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
-      border-bottom: 1px solid #E2E8F0;
-      transition: background 0.4s ease, border-color 0.3s ease;
+      padding: 16px 24px;
+      background: transparent;
+      transition: background 0.4s ease;
     }
 
     body.slope-active .tab-splitter {
-      background: rgba(16, 30, 42, 0.95);
-      border-bottom-color: #374757;
+      background: transparent;
     }
 
     .tab-bar {
       display: inline-flex;
       position: relative;
-      height: 44px;
-      padding: 4px;
-      background: #E2E8F0;
-      border-radius: 12px;
+      height: 48px;
+      padding: 5px;
+      background: rgba(0, 0, 0, 0.06);
+      border-radius: 999px;
       transition: background 0.3s ease;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
     }
 
     body.slope-active .tab-bar {
-      background: #1E2936;
+      background: rgba(255, 255, 255, 0.08);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
     }
 
     .tab-option {
-      width: 120px;
+      width: 130px;
       display: flex;
       align-items: center;
       justify-content: center;
       font-size: 0.9375rem;
       font-weight: 600;
-      color: #5A7286;
+      color: #64748B;
       cursor: pointer;
       border: none;
       background: transparent;
-      border-radius: 10px;
-      transition: color 0.2s, background 0.2s;
+      border-radius: 999px;
+      transition: color 0.25s ease, background 0.25s cubic-bezier(0.4, 0, 0.2, 1), transform 0.2s ease;
       -webkit-tap-highlight-color: transparent;
     }
 
-    .tab-option:hover {
+    .tab-option:hover:not(.active) {
       color: #1E2936;
+      background: rgba(255, 255, 255, 0.6);
     }
 
-    body.slope-active .tab-option:hover {
-      color: #94A3B8;
+    body.slope-active .tab-option:hover:not(.active) {
+      color: #E2E8F0;
+      background: rgba(255, 255, 255, 0.1);
     }
 
     .tab-option.active {
       color: #FFFFFF;
       background: #4298D2;
-      box-shadow: 0 2px 8px rgba(66, 152, 210, 0.35);
+      box-shadow: 0 2px 12px rgba(66, 152, 210, 0.4);
     }
 
     body.slope-active .tab-option.active {
       background: #4298D2;
       color: #FFFFFF;
+      box-shadow: 0 2px 12px rgba(66, 152, 210, 0.45);
     }
 
     .tab-option:not(.active) {
-      color: #5A7286;
+      color: #64748B;
     }
 
     body.slope-active .tab-option:not(.active) {
@@ -136,7 +137,7 @@
       display: flex;
       flex-direction: column;
       padding: 48px;
-      padding-top: 88px;
+      padding-top: 76px;
       position: relative;
       background:
         radial-gradient(circle at 0% 100%, rgba(66, 152, 210, 0.06) 0%, transparent 50%),
@@ -743,6 +744,22 @@
       line-height: 1.6;
     }
 
+    .slope-canny {
+      font-size: 0.9375rem;
+      color: #94A3B8;
+      max-width: 480px;
+      margin: 16px auto 0;
+      line-height: 1.6;
+    }
+
+    .slope-canny a {
+      color: #6DB5DE;
+      text-decoration: none;
+      font-weight: 500;
+    }
+
+    .slope-canny a:hover { text-decoration: underline; }
+
     .slope-branch {
       margin-bottom: 32px;
     }
@@ -836,25 +853,26 @@
     .slope-footer a:hover { text-decoration: underline; }
 
     @media (max-width: 900px) {
-      .page { padding-top: 80px; }
-      .tab-option { width: 100px; }
+      .page { padding-top: 72px; }
+      .tab-option { width: 110px; }
     }
 
     @media (max-width: 480px) {
-      .tab-splitter { padding: 14px 16px 12px; }
-      .tab-option { width: 90px; font-size: 0.875rem; }
+      .tab-splitter { padding: 12px 16px; }
+      .tab-option { width: 100px; font-size: 0.875rem; }
+      .slope-canny { font-size: 0.875rem; }
       .slope-track { flex-wrap: wrap; gap: 8px; }
       .slope-track-name { width: 100%; }
     }
   </style>
 </head>
 <body>
-  <header class="tab-splitter">
+  <div class="tab-splitter">
     <div class="tab-bar">
       <button type="button" class="tab-option active" data-tab="0" id="tab-waitlist">Waitlist</button>
       <button type="button" class="tab-option" data-tab="1" id="tab-slope">The Slope</button>
     </div>
-  </header>
+  </div>
 
   <div class="page">
     <!-- Waitlist panel -->
@@ -926,7 +944,10 @@
           </svg>
         </div>
         <h2 class="slope-title">The Slope</h2>
-        <p class="slope-tagline">Our feature roadmap — what we've built, what we're working on, and what's next. Same view as in the app.</p>
+        <p class="slope-tagline">What we've built, what we're working on, and what's next. Same view as in the app.</p>
+        <p class="slope-canny">
+          Have a feature idea? <a href="https://slopestory.canny.io/feature-requests" target="_blank" rel="noopener">Vote and suggest on our Feature requests board</a> and help shape what we build.
+        </p>
       </div>
       <div id="slope-tree"></div>
       <div class="slope-footer">
