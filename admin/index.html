@@ -726,6 +726,7 @@
       border-radius: 12px;
       overflow: hidden;
       margin-bottom: 20px;
+      position: relative;
     }
 
     .roadmap-branch-header {
@@ -735,12 +736,6 @@
       padding: 14px 20px;
       background: rgba(66, 152, 210, 0.12);
       border-bottom: 1px solid var(--border);
-    }
-
-    .roadmap-branch-title {
-      font-weight: 700;
-      font-size: 15px;
-      color: var(--primary-light);
     }
 
     .roadmap-branch-actions { display: flex; gap: 8px; }
@@ -755,7 +750,22 @@
       background: var(--slate-dark);
     }
 
+    .roadmap-feature-row {
+      cursor: grab;
+      border: 1px solid transparent;
+    }
     .roadmap-feature-row:hover { background: var(--surface-hover); }
+    .roadmap-feature-row.dragging { opacity: 0.5; cursor: grabbing; }
+    .roadmap-feature-row.drag-over { border-color: var(--primary); background: rgba(66, 152, 210, 0.2); }
+    .roadmap-feature-row .roadmap-drag-handle { cursor: grab; padding: 4px; margin: -4px 4px -4px -4px; color: var(--text-muted); flex-shrink: 0; }
+    .roadmap-feature-row .roadmap-drag-handle:active { cursor: grabbing; }
+    .roadmap-branch-header {
+      cursor: grab;
+    }
+    .roadmap-branch-header.dragging { opacity: 0.6; cursor: grabbing; }
+    .roadmap-branch-header.drag-over { background: rgba(66, 152, 210, 0.35); outline: 2px solid var(--primary); }
+    .roadmap-branch-header .roadmap-drag-handle { margin-right: 8px; color: var(--text-muted); flex-shrink: 0; }
+    .roadmap-branch-title { flex: 1; font-weight: 700; font-size: 15px; color: var(--primary-light); }
     .roadmap-feature-name { flex: 1; min-width: 0; }
     .roadmap-feature-name input {
       width: 100%;
@@ -783,6 +793,7 @@
       cursor: pointer;
     }
     .roadmap-empty { color: var(--text-muted); padding: 16px; font-size: 14px; }
+    .roadmap-hint { color: var(--text-muted); font-size: 13px; margin-bottom: 12px; }
   </style>
 </head>
 <body>
@@ -1091,6 +1102,7 @@
 
       <!-- Roadmap Page Content -->
       <div id="roadmapPage" class="main-content hidden">
+        <p class="roadmap-hint">Drag cards to reorder. Order here is reflected in the app and waitlist page.</p>
         <div id="roadmapMsg" class="result-box" style="display: none; margin-bottom: 16px;"></div>
         <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 24px; flex-wrap: wrap;">
           <button class="btn btn-sm" onclick="roadmapAddBranch()">+ Add branch</button>
@@ -2004,23 +2016,26 @@
         (byParent[b.id] || []).sort((x, y) => (x.sort_order || 0) - (y.sort_order || 0) || (x.name || '').localeCompare(y.name || ''));
       });
 
+      const gripSvg = '<svg class="roadmap-drag-handle" width="14" height="14" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true"><circle cx="4" cy="3" r="1.2"/><circle cx="8" cy="3" r="1.2"/><circle cx="4" cy="6" r="1.2"/><circle cx="8" cy="6" r="1.2"/><circle cx="4" cy="9" r="1.2"/><circle cx="8" cy="9" r="1.2"/></svg>';
       let html = '';
       branches.forEach(branch => {
         const children = (byParent[branch.id] || []).filter(r => r.node_type === 'feature');
         html += '<div class="roadmap-branch" data-branch-id="' + branch.id + '">';
-        html += '<div class="roadmap-branch-header">';
+        html += '<div class="roadmap-branch-header" draggable="true" data-drag-type="branch" data-id="' + branch.id + '" data-sort="' + (branch.sort_order || 0) + '">';
+        html += '<span class="roadmap-drag-handle">' + gripSvg + '</span>';
         html += '<span class="roadmap-branch-title">' + escapeHtml(branch.name) + '</span>';
         html += '<div class="roadmap-branch-actions">';
         html += '<button type="button" class="btn btn-secondary btn-sm" onclick="roadmapAddFeature(\'' + branch.id + '\')">+ Feature</button>';
         html += '<button type="button" class="btn btn-secondary btn-sm" data-id="' + escapeAttr(branch.id) + '" data-name="' + escapeAttr(branch.name) + '" data-sort="' + (branch.sort_order || 0) + '" onclick="roadmapEditBranch(this)">Edit</button>';
         html += '<button type="button" class="btn btn-danger btn-sm" data-id="' + escapeAttr(branch.id) + '" data-name="' + escapeAttr(branch.name) + '" onclick="roadmapDelete(this)">Delete</button>';
         html += '</div></div>';
-        html += '<div class="roadmap-feature-list">';
+        html += '<div class="roadmap-feature-list" data-parent-id="' + branch.id + '">';
         if (children.length === 0) {
-          html += '<div class="roadmap-empty">No features. Click "+ Feature" to add one.</div>';
+          html += '<div class="roadmap-empty" data-drop-zone="' + branch.id + '">No features. Drag cards here or click "+ Feature" to add one.</div>';
         } else {
           children.forEach(f => {
-            html += '<div class="roadmap-feature-row" data-id="' + f.id + '">';
+            html += '<div class="roadmap-feature-row" draggable="true" data-drag-type="feature" data-id="' + f.id + '" data-parent-id="' + branch.id + '" data-sort="' + (f.sort_order || 0) + '">';
+            html += '<span class="roadmap-drag-handle">' + gripSvg + '</span>';
             html += '<div class="roadmap-feature-name"><input type="text" value="' + escapeAttr(f.name) + '" data-id="' + f.id + '" onblur="roadmapFeatureNameBlur(\'' + f.id + '\', this.value.trim())"></div>';
             html += '<div class="roadmap-feature-status"><select data-id="' + f.id + '" onchange="roadmapFeatureStatusChange(\'' + f.id + '\', this.value)">';
             ['exploring', 'planned', 'dusted', 'in_progress', 'done'].forEach(opt => {
@@ -2035,6 +2050,110 @@
       });
       if (branches.length === 0) html = '<div class="roadmap-empty">No branches yet. Click "+ Add branch" to create one.</div>';
       treeEl.innerHTML = html;
+      setupRoadmapDragAndDrop(treeEl);
+    }
+
+    function setupRoadmapDragAndDrop(container) {
+      let dragPayload = null;
+      container.addEventListener('dragstart', (e) => {
+        const row = e.target.closest('.roadmap-feature-row, .roadmap-branch-header');
+        if (!row || !row.draggable) return;
+        const type = row.getAttribute('data-drag-type');
+        const id = row.getAttribute('data-id');
+        const parentId = row.getAttribute('data-parent-id') || null;
+        dragPayload = type === 'branch' ? { type: 'branch', id } : { type: 'feature', id, parentId };
+        e.dataTransfer.setData('application/json', JSON.stringify(dragPayload));
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', id);
+        row.classList.add('dragging');
+      });
+      container.addEventListener('dragend', (e) => {
+        const row = e.target.closest('.roadmap-feature-row, .roadmap-branch-header');
+        if (row) row.classList.remove('dragging');
+        container.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+        dragPayload = null;
+      });
+      container.addEventListener('dragover', (e) => {
+        const target = e.target.closest('.roadmap-feature-row, .roadmap-branch-header, .roadmap-feature-list, .roadmap-empty[data-drop-zone]');
+        if (!target || !dragPayload) return;
+        let accept = false;
+        if (dragPayload.type === 'feature' && (target.classList.contains('roadmap-feature-row') || target.classList.contains('roadmap-feature-list') || target.classList.contains('roadmap-empty'))) accept = true;
+        if (dragPayload.type === 'branch' && target.classList.contains('roadmap-branch-header')) accept = true;
+        if (!accept) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        container.querySelectorAll('.drag-over').forEach(el => { if (el !== target) el.classList.remove('drag-over'); });
+        target.classList.add('drag-over');
+      });
+      container.addEventListener('dragleave', (e) => {
+        const target = e.target.closest('.roadmap-feature-row, .roadmap-branch-header, .roadmap-feature-list, .roadmap-empty[data-drop-zone]');
+        if (target && !target.contains(e.relatedTarget)) target.classList.remove('drag-over');
+      });
+      container.addEventListener('drop', (e) => {
+        const target = e.target.closest('.roadmap-feature-row, .roadmap-branch-header, .roadmap-feature-list, .roadmap-empty[data-drop-zone]');
+        if (!target || !dragPayload || !sb) return;
+        e.preventDefault();
+        target.classList.remove('drag-over');
+        if (dragPayload.type === 'feature') {
+          const dropParentId = target.getAttribute('data-parent-id') || target.getAttribute('data-drop-zone');
+          if (!dropParentId || dragPayload.parentId !== dropParentId) return;
+          const list = container.querySelector('.roadmap-feature-list[data-parent-id="' + dropParentId + '"]');
+          const rows = list ? list.querySelectorAll('.roadmap-feature-row') : [];
+          let targetIndex = 0;
+          if (target.classList.contains('roadmap-feature-row')) {
+            for (let i = 0; i < rows.length; i++) {
+              if (rows[i].getAttribute('data-id') === target.getAttribute('data-id')) { targetIndex = i; break; }
+            }
+          } else if (target.classList.contains('roadmap-feature-list') || target.classList.contains('roadmap-empty')) {
+            targetIndex = rows.length;
+          }
+          const ids = Array.from(rows).map(r => r.getAttribute('data-id'));
+          const fromIdx = ids.indexOf(dragPayload.id);
+          if (fromIdx === -1) return;
+          ids.splice(fromIdx, 1);
+          ids.splice(targetIndex, 0, dragPayload.id);
+          persistRoadmapFeatureOrder(dropParentId, ids).then(() => loadRoadmap());
+        } else if (dragPayload.type === 'branch') {
+          const branches = container.querySelectorAll('.roadmap-branch');
+          const targetBranchId = target.getAttribute('data-id') || (target.closest('.roadmap-branch') && target.closest('.roadmap-branch').getAttribute('data-branch-id'));
+          if (!targetBranchId) return;
+          const branchIds = Array.from(branches).map(b => b.getAttribute('data-branch-id'));
+          const fromIdx = branchIds.indexOf(dragPayload.id);
+          if (fromIdx === -1) return;
+          const toIdx = branchIds.indexOf(targetBranchId);
+          if (toIdx === -1) return;
+          branchIds.splice(fromIdx, 1);
+          branchIds.splice(toIdx, 0, dragPayload.id);
+          persistRoadmapBranchOrder(branchIds).then(() => loadRoadmap());
+        }
+        dragPayload = null;
+      });
+    }
+
+    async function persistRoadmapFeatureOrder(parentId, orderedIds) {
+      try {
+        const results = await Promise.all(orderedIds.map((id, index) =>
+          sb.from('app_features').update({ sort_order: index, updated_at: new Date().toISOString() }).eq('id', id)
+        ));
+        const err = results.find(r => r.error);
+        if (err) throw err.error;
+        roadmapMsg('Order saved. App and waitlist will reflect this order.');
+      } catch (err) {
+        roadmapMsg(err.message || String(err), true);
+      }
+    }
+
+    async function persistRoadmapBranchOrder(orderedBranchIds) {
+      try {
+        const results = await Promise.all(orderedBranchIds.map((id, index) =>
+          sb.from('app_features').update({ sort_order: index, updated_at: new Date().toISOString() }).eq('id', id)
+        ));
+        const err = results.find(r => r.error);
+        if (err) throw err.error;
+        roadmapMsg('Branch order saved.');
+      } catch (err) {
+        roadmapMsg(err.message || String(err), true);
+      }
     }
 
     function escapeAttr(s) {
