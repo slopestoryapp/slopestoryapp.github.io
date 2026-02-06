@@ -9,7 +9,7 @@
     For stronger protection (HSTS, X-Frame-Options, etc), proxy app.slopestory.com through a layer
     that can set headers (e.g. Cloudflare).
   -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; base-uri 'none'; form-action 'none'; script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src https://rnudbfdhrenesamdjzdk.supabase.co; img-src 'self' data: https://rnudbfdhrenesamdjzdk.supabase.co https://res.cloudinary.com; font-src 'self' data:;">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; base-uri 'none'; form-action 'none'; script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src https://rnudbfdhrenesamdjzdk.supabase.co https://cdn.jsdelivr.net; img-src 'self' data: https://rnudbfdhrenesamdjzdk.supabase.co https://res.cloudinary.com; font-src 'self' data:;">
   <title>Admin Dashboard - SlopeStory</title>
   <link rel="icon" type="image/png" href="https://rnudbfdhrenesamdjzdk.supabase.co/storage/v1/object/public/brand-assets/logo-light.png">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -1746,8 +1746,8 @@
         html += '<span class="roadmap-branch-title">' + escapeHtml(branch.name) + '</span>';
         html += '<div class="roadmap-branch-actions">';
         html += '<button type="button" class="btn btn-secondary btn-sm" onclick="roadmapAddFeature(\'' + branch.id + '\')">+ Feature</button>';
-        html += '<button type="button" class="btn btn-secondary btn-sm" onclick="roadmapEditBranch(\'' + branch.id + '\', \'' + escapeAttr(branch.name) + '\', ' + (branch.sort_order || 0) + ')">Edit</button>';
-        html += '<button type="button" class="btn btn-danger btn-sm" onclick="roadmapDelete(\'' + branch.id + '\', \'' + escapeAttr(branch.name) + '\')">Delete</button>';
+        html += '<button type="button" class="btn btn-secondary btn-sm" data-id="' + escapeAttr(branch.id) + '" data-name="' + escapeAttr(branch.name) + '" data-sort="' + (branch.sort_order || 0) + '" onclick="roadmapEditBranch(this)">Edit</button>';
+        html += '<button type="button" class="btn btn-danger btn-sm" data-id="' + escapeAttr(branch.id) + '" data-name="' + escapeAttr(branch.name) + '" onclick="roadmapDelete(this)">Delete</button>';
         html += '</div></div>';
         html += '<div class="roadmap-feature-list">';
         if (children.length === 0) {
@@ -1761,7 +1761,7 @@
               html += '<option value="' + opt + '"' + (f.status === opt ? ' selected' : '') + '>' + (opt === 'in_progress' ? 'In Progress' : opt.charAt(0).toUpperCase() + opt.slice(1)) + '</option>';
             });
             html += '</select></div>';
-            html += '<button type="button" class="btn btn-danger btn-sm" onclick="roadmapDelete(\'' + f.id + '\', \'' + escapeAttr(f.name) + '\')">Delete</button>';
+            html += '<button type="button" class="btn btn-danger btn-sm" data-id="' + escapeAttr(f.id) + '" data-name="' + escapeAttr(f.name) + '" onclick="roadmapDelete(this)">Delete</button>';
             html += '</div>';
           });
         }
@@ -1799,13 +1799,13 @@
       document.getElementById('roadmapModal').style.display = 'flex';
     }
 
-    function roadmapEditBranch(id, name, sort) {
-      roadmapEditingId = id;
+    function roadmapEditBranch(btn) {
+      roadmapEditingId = btn.dataset.id;
       roadmapAddUnderParentId = null;
       document.getElementById('roadmapModalTitle').textContent = 'Edit branch';
-      document.getElementById('roadmapModalName').value = name || '';
+      document.getElementById('roadmapModalName').value = (btn.dataset.name || '').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
       document.getElementById('roadmapModalStatusWrap').style.display = 'none';
-      document.getElementById('roadmapModalSort').value = String(sort || 0);
+      document.getElementById('roadmapModalSort').value = String(btn.dataset.sort || 0);
       document.getElementById('roadmapModal').style.display = 'flex';
     }
 
@@ -1862,8 +1862,11 @@
       }
     }
 
-    async function roadmapDelete(id, name) {
-      if (!confirm('Delete “‘ + (name || id) + '”? Deleting a branch will also remove all its features.')) return;
+    async function roadmapDelete(btn) {
+      var id = btn.dataset.id;
+      var name = (btn.dataset.name || '').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&');
+      var display = name || id;
+      if (!confirm("Delete \"" + display + "\"? Deleting a branch will also remove all its features.")) return;
       if (!sb) return;
       try {
         const { error } = await sb.from('app_features').delete().eq('id', id);
