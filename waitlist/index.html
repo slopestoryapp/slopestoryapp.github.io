@@ -55,19 +55,14 @@
       color: #FFFFFF;
     }
 
-    /* Tab splitter - fixed to viewport; only .page scrolls so tab never moves */
+    /* Tab splitter - anchored at top of page (in flow, part of .page) */
     .tab-splitter {
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      z-index: 100;
+      flex-shrink: 0;
       display: flex;
       justify-content: center;
       padding: 16px 24px;
       background: transparent;
       transition: background 0.4s ease;
-      transform: translateZ(0);
     }
 
     body.slope-active .tab-splitter {
@@ -140,7 +135,7 @@
       color: #94A3B8;
     }
 
-    /* Main container - this is the only scrollable area so tab stays fixed */
+    /* Main container */
     .page {
       flex: 1;
       min-height: 0;
@@ -149,8 +144,7 @@
       overflow-x: hidden;
       display: flex;
       flex-direction: column;
-      padding: 40px 48px 24px;
-      padding-top: 76px;
+      padding: 0 48px 24px;
       position: relative;
       background:
         radial-gradient(circle at 0% 100%, rgba(66, 152, 210, 0.06) 0%, transparent 50%),
@@ -173,6 +167,7 @@
 
     .panel.active {
       display: flex;
+      padding-top: 20px;
     }
 
     .panel.panel-waitlist.active {
@@ -567,8 +562,7 @@
        ======================================== */
     @media (max-width: 900px) {
       .page {
-        padding: 32px 24px 24px;
-        padding-top: 76px;
+        padding: 0 24px 24px;
       }
 
       .hero-grid {
@@ -651,8 +645,7 @@
        ======================================== */
     @media (max-width: 480px) {
       .page {
-        padding: 24px 16px 20px;
-        padding-top: 72px;
+        padding: 0 16px 20px;
       }
 
       h1 {
@@ -868,11 +861,11 @@
     .slope-footer a:hover { text-decoration: underline; }
 
     @media (max-width: 900px) {
-      .page { padding-top: 72px; }
       .tab-option { width: 110px; }
     }
 
     @media (max-width: 480px) {
+      .page { padding-left: 16px; padding-right: 16px; }
       .tab-splitter { padding: 12px 16px; }
       .tab-option { width: 100px; font-size: 0.875rem; }
       .slope-canny { font-size: 0.875rem; }
@@ -882,14 +875,13 @@
   </style>
 </head>
 <body>
-  <div class="tab-splitter">
-    <div class="tab-bar">
-      <button type="button" class="tab-option active" data-tab="0" id="tab-waitlist">Waitlist</button>
-      <button type="button" class="tab-option" data-tab="1" id="tab-slope">The Slope</button>
-    </div>
-  </div>
-
   <div class="page">
+    <div class="tab-splitter">
+      <div class="tab-bar">
+        <button type="button" class="tab-option active" data-tab="0" id="tab-waitlist">Waitlist</button>
+        <button type="button" class="tab-option" data-tab="1" id="tab-slope">The Slope</button>
+      </div>
+    </div>
     <!-- Waitlist panel -->
     <div class="panel panel-waitlist active" id="panel-waitlist">
     <div class="hero-grid">
