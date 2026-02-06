@@ -1246,6 +1246,10 @@
     let roadmapEditingId = null;
     let roadmapAddUnderParentId = null;
 
+    // Feature photos state
+    let featurePhotos = [];
+    let currentFeaturePhoto = null;
+
     // ============ DOM Elements ============
     const $loadingScreen = document.getElementById('loadingScreen');
     const $authScreen = document.getElementById('authScreen');
@@ -1306,6 +1310,7 @@
       loadStats();
       loadSupportTickets();
       loadSupportStats();
+      loadFeaturePhotosCount();
     }
 
     // ============ Page Navigation ============
@@ -1319,41 +1324,42 @@
 
       // Update header
       const header = document.querySelector('.main-header');
-      const mainContent = document.querySelector('.main-content:not(#supportPage)');
+      const submissionsPage = document.getElementById('submissionsPage');
+      const featurePhotosPage = document.getElementById('featurePhotosPage');
       const supportPage = document.getElementById('supportPage');
+      const roadmapPage = document.getElementById('roadmapPage');
       const refreshBtn = document.getElementById('refreshBtn');
 
-      const roadmapPage = document.getElementById('roadmapPage');
+      const allPages = [submissionsPage, featurePhotosPage, supportPage, roadmapPage].filter(Boolean);
+      allPages.forEach(p => p.classList.add('hidden'));
 
       if (page === 'roadmap') {
         header.querySelector('.page-title').textContent = 'Feature Roadmap';
         header.querySelector('.page-subtitle').textContent = 'Manage branches and features (app & waitlist)';
-        mainContent.classList.add('hidden');
-        supportPage.classList.add('hidden');
         roadmapPage.classList.remove('hidden');
         refreshBtn.onclick = loadRoadmap;
         loadRoadmap();
       } else if (page === 'support') {
         header.querySelector('.page-title').textContent = 'Support Tickets';
         header.querySelector('.page-subtitle').textContent = 'Manage user support requests and feedback';
-        mainContent.classList.add('hidden');
         supportPage.classList.remove('hidden');
-        roadmapPage.classList.add('hidden');
         refreshBtn.onclick = () => { loadSupportTickets(); loadSupportStats(); };
+      } else if (page === 'feature-photos') {
+        header.querySelector('.page-title').textContent = 'Feature Photos';
+        header.querySelector('.page-subtitle').textContent = 'Approve or reject community photo submissions';
+        featurePhotosPage.classList.remove('hidden');
+        refreshBtn.onclick = loadFeaturePhotos;
+        loadFeaturePhotos();
       } else if (page === 'submissions') {
         header.querySelector('.page-title').textContent = 'Resort Submissions';
         header.querySelector('.page-subtitle').textContent = 'Review and process new resort requests';
-        mainContent.classList.remove('hidden');
-        supportPage.classList.add('hidden');
-        roadmapPage.classList.add('hidden');
+        submissionsPage.classList.remove('hidden');
         refreshBtn.onclick = loadSubmissions;
       } else {
         // Placeholder for other pages
         header.querySelector('.page-title').textContent = capitalize(page);
         header.querySelector('.page-subtitle').textContent = 'Coming soon...';
-        mainContent.classList.add('hidden');
-        supportPage.classList.add('hidden');
-        if (document.getElementById('roadmapPage')) document.getElementById('roadmapPage').classList.add('hidden');
+        if (submissionsPage) submissionsPage.classList.remove('hidden');
       }
     }
 
@@ -1755,6 +1761,194 @@
         closed: 'Closed'
       };
       return labels[status] || status;
+    }
+
+    // ============ Feature Photos ============
+    async function loadFeaturePhotosCount() {
+      if (!sb) return;
+      try {
+        const { count, error } = await sb
+          .from('resort_feature_photo_submissions')
+          .select('*', { count: 'exact', head: true })
+          .eq('status', 'pending');
+        if (error) return;
+        document.getElementById('featurePhotosPendingCount').textContent = count || 0;
+      } catch (err) {
+        console.error('Feature photos count failed:', err);
+      }
+    }
+
+    async function loadFeaturePhotos() {
+      if (!sb) return;
+
+      const refreshBtn = document.getElementById('featurePhotosRefreshBtn');
+      if (refreshBtn) refreshBtn.classList.add('loading');
+
+      const listEl = document.getElementById('featurePhotoList');
+      listEl.innerHTML = '<div class="empty-state"><div class="spinner" style="margin: 0 auto 12px;"></div><p>Loading...</p></div>';
+
+      try {
+        const { data: pending, error: pendingErr } = await sb
+          .from('resort_feature_photo_submissions')
+          .select('*, resort:resorts(name)')
+          .eq('status', 'pending')
+          .order('created_at', { ascending: false });
+
+        if (pendingErr) throw pendingErr;
+
+        const { count: totalCount, error: totalErr } = await sb
+          .from('resort_feature_photo_submissions')
+          .select('*', { count: 'exact', head: true });
+        if (!totalErr) {
+          document.getElementById('featurePhotosStatTotal').textContent = totalCount ?? 0;
+        }
+
+        const startOfMonth = new Date();
+        startOfMonth.setDate(1);
+        startOfMonth.setHours(0, 0, 0, 0);
+        const { data: approvedThisMonth, error: approvedErr } = await sb
+          .from('resort_feature_photo_submissions')
+          .select('id')
+          .eq('status', 'approved')
+          .gte('reviewed_at', startOfMonth.toISOString());
+        if (!approvedErr) {
+          document.getElementById('featurePhotosStatApproved').textContent = (approvedThisMonth || []).length;
+        }
+
+        featurePhotos = pending || [];
+        document.getElementById('featurePhotosStatPending').textContent = featurePhotos.length;
+        document.getElementById('featurePhotosPendingCount').textContent = featurePhotos.length;
+
+        renderFeaturePhotoList();
+        if (currentFeaturePhoto && !featurePhotos.find(f => f.id === currentFeaturePhoto.id)) {
+          currentFeaturePhoto = null;
+        }
+        renderFeaturePhotoDetails();
+      } catch (err) {
+        console.error('Failed to load feature photos:', err);
+        listEl.innerHTML = '<div class="empty-state"><p>Failed to load. Check console.</p></div>';
+      }
+
+      if (refreshBtn) refreshBtn.classList.remove('loading');
+    }
+
+    function renderFeaturePhotoList() {
+      const list = document.getElementById('featurePhotoList');
+
+      if (featurePhotos.length === 0) {
+        list.innerHTML = `
+          <div class="empty-state">
+            <svg fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            <p>No pending feature photo submissions</p>
+          </div>
+        `;
+        return;
+      }
+
+      list.innerHTML = featurePhotos.map(fp => {
+        const resortName = (fp.resort && fp.resort.name) || 'Unknown resort';
+        return `
+        <div class="submission-item ${currentFeaturePhoto?.id === fp.id ? 'active' : ''}" onclick="selectFeaturePhoto('${fp.id}')">
+          <div class="submission-name">${escapeHtml(resortName)}</div>
+          <div class="submission-meta">
+            <span>${formatDate(fp.created_at)}</span>
+          </div>
+        </div>
+      `;
+      }).join('');
+    }
+
+    function selectFeaturePhoto(id) {
+      currentFeaturePhoto = featurePhotos.find(f => f.id === id);
+      renderFeaturePhotoList();
+      renderFeaturePhotoDetails();
+    }
+
+    function renderFeaturePhotoDetails() {
+      const body = document.getElementById('featurePhotoDetailsBody');
+
+      if (!currentFeaturePhoto) {
+        body.innerHTML = `
+          <div class="empty-state">
+            <svg fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.042 21.672L13.684 16.6m0 0l-2.51 2.225.569-9.47 5.227 7.917-3.286-.672zM12 2.25V4.5m5.834.166l-1.591 1.591M20.25 10.5H18M7.757 14.743l-1.59 1.59M6 10.5H3.75m4.007-4.243l-1.59-1.59"/></svg>
+            <p>Select a submission to view details and approve or reject</p>
+          </div>
+        `;
+        return;
+      }
+
+      const fp = currentFeaturePhoto;
+      const resortName = (fp.resort && fp.resort.name) || 'Unknown resort';
+
+      body.innerHTML = `
+        <div class="detail-panel">
+          <div class="detail-header">
+            <div>
+              <div class="detail-title">${escapeHtml(resortName)}</div>
+              <div class="detail-subtitle">${formatDate(fp.created_at)}</div>
+            </div>
+            <span class="status-badge status-pending">Pending</span>
+          </div>
+
+          <div class="detail-grid">
+            <div class="detail-item">
+              <label>Submission ID</label>
+              <p style="font-family: monospace; font-size: 11px;">${fp.id}</p>
+            </div>
+            <div class="detail-item">
+              <label>User ID</label>
+              <p style="font-family: monospace; font-size: 11px;">${fp.user_id || '-'}</p>
+            </div>
+            <div class="detail-item">
+              <label>Resort ID</label>
+              <p style="font-family: monospace; font-size: 11px;">${fp.resort_id}</p>
+            </div>
+            ${fp.caption ? `
+            <div class="detail-item" style="grid-column: 1 / -1;">
+              <label>Caption</label>
+              <p>${escapeHtml(fp.caption)}</p>
+            </div>
+            ` : ''}
+          </div>
+
+          <div class="detail-image">
+            <img src="${fp.photo_url}" alt="Submitted photo" onerror="this.parentElement.innerHTML='<p style=\\'padding:48px;text-align:center;color:var(--text-muted)\\'>Image failed to load</p>'">
+          </div>
+
+          <div class="action-row">
+            <button class="btn btn-success btn-sm" onclick="updateFeaturePhotoStatus('approved')">
+              <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+              Approve
+            </button>
+            <button class="btn btn-danger btn-sm" onclick="updateFeaturePhotoStatus('rejected')">
+              <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+              Reject
+            </button>
+          </div>
+        </div>
+      `;
+    }
+
+    async function updateFeaturePhotoStatus(status) {
+      if (!currentFeaturePhoto || !sb) return;
+      if (!confirm('Are you sure you want to ' + status + ' this submission? Approved photos will appear in the resort\'s community gallery and may set the resort cover if none exists.')) return;
+
+      try {
+        const { error } = await sb
+          .from('resort_feature_photo_submissions')
+          .update({ status })
+          .eq('id', currentFeaturePhoto.id);
+
+        if (error) throw error;
+
+        alert('Submission ' + status + ' successfully.');
+        currentFeaturePhoto = null;
+        loadFeaturePhotos();
+        loadFeaturePhotosCount();
+      } catch (err) {
+        console.error('Failed to update feature photo status:', err);
+        alert('Failed to update: ' + err.message);
+      }
     }
 
     // ============ Roadmap ============
