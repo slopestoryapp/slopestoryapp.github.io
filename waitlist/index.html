@@ -101,18 +101,18 @@
       -webkit-tap-highlight-color: transparent;
     }
 
-    /* On Waitlist: hovering "The Slope" = light grey bg + subtle glow */
+    /* On Waitlist: hovering "The Slope" = text only, darker */
     .tab-option:hover:not(.active) {
-      color: #475569;
-      background: #E5E9EE;
-      box-shadow: 0 0 12px rgba(0, 0, 0, 0.07);
+      color: #334155;
+      background: transparent;
+      box-shadow: none;
     }
 
-    /* On The Slope: hovering "Waitlist" = dark grey bg + subtle glow */
+    /* On The Slope: hovering "Waitlist" = text only, brighter */
     body.slope-active .tab-option:hover:not(.active) {
-      color: #CBD5E1;
-      background: #2A3340;
-      box-shadow: 0 0 14px rgba(255, 255, 255, 0.06);
+      color: #E2E8F0;
+      background: transparent;
+      box-shadow: none;
     }
 
     .tab-option.active {
@@ -856,12 +856,26 @@
       color: #64748B;
     }
 
+    .slope-footer-join {
+      margin-bottom: 12px;
+    }
+
+    .slope-footer-legal {
+      margin: 0;
+      font-size: 0.75rem;
+      color: #94A3B8;
+    }
+
     .slope-footer a {
       color: #6DB5DE;
       text-decoration: none;
     }
 
     .slope-footer a:hover { text-decoration: underline; }
+
+    body.slope-active .footer {
+      display: none;
+    }
 
     @media (max-width: 900px) {
       .tab-option { width: 110px; }
@@ -960,11 +974,12 @@
       </div>
       <div id="slope-tree"></div>
       <div class="slope-footer">
-        <a href="/waitlist/">Join the waitlist</a> for early access &middot; &copy; 2026 Slopestory
+        <p class="slope-footer-join"><a href="/waitlist/">Join the waitlist</a> for early access</p>
+        <p class="slope-footer-legal">&copy; 2026 Slopestory &middot; <a href="/privacy-policy.html">Privacy Policy</a> &middot; <a href="/terms-of-service.html">Terms of Service</a></p>
       </div>
     </div>
 
-    <footer class="footer">
+    <footer class="footer" id="main-footer">
       <span>&copy; 2026 Slopestory</span>
       <div class="footer-links">
         <a href="/privacy-policy.html">Privacy Policy</a>
