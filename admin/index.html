@@ -707,6 +707,82 @@
     .btn-refresh.loading svg {
       animation: spin 0.8s linear infinite;
     }
+
+    /* Roadmap */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.6);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 200;
+      padding: 16px;
+    }
+
+    .roadmap-branch {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      margin-bottom: 20px;
+    }
+
+    .roadmap-branch-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 20px;
+      background: rgba(66, 152, 210, 0.12);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .roadmap-branch-title {
+      font-weight: 700;
+      font-size: 15px;
+      color: var(--primary-light);
+    }
+
+    .roadmap-branch-actions { display: flex; gap: 8px; }
+    .roadmap-feature-list { padding: 12px; }
+    .roadmap-feature-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 14px;
+      border-radius: 8px;
+      margin-bottom: 6px;
+      background: var(--slate-dark);
+    }
+
+    .roadmap-feature-row:hover { background: var(--surface-hover); }
+    .roadmap-feature-name { flex: 1; min-width: 0; }
+    .roadmap-feature-name input {
+      width: 100%;
+      background: var(--slate-darker);
+      border: 1px solid transparent;
+      color: var(--text-primary);
+      padding: 8px 10px;
+      border-radius: 6px;
+      font-size: 14px;
+    }
+    .roadmap-feature-name input:hover,
+    .roadmap-feature-name input:focus {
+      border-color: var(--border);
+      outline: none;
+    }
+    .roadmap-feature-status { width: 140px; }
+    .roadmap-feature-status select {
+      width: 100%;
+      padding: 8px 10px;
+      border-radius: 6px;
+      background: var(--slate-darker);
+      color: var(--text-primary);
+      border: 1px solid var(--border);
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .roadmap-empty { color: var(--text-muted); padding: 16px; font-size: 14px; }
   </style>
 </head>
 <body>
@@ -757,6 +833,10 @@
           <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M18.364 5.636l-3.536 3.536m0 5.656l3.536 3.536M9.172 9.172L5.636 5.636m3.536 9.192l-3.536 3.536M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-5 0a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
           Support
           <span class="nav-badge" id="supportPendingCount">0</span>
+        </a>
+        <a class="nav-item" data-page="roadmap">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>
+          Roadmap
         </a>
       </nav>
 
@@ -948,6 +1028,51 @@
         </div>
       </div>
 
+      <!-- Roadmap Page Content -->
+      <div id="roadmapPage" class="main-content hidden">
+        <div id="roadmapMsg" class="result-box" style="display: none; margin-bottom: 16px;"></div>
+        <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 24px; flex-wrap: wrap;">
+          <button class="btn btn-sm" onclick="roadmapAddBranch()">+ Add branch</button>
+          <button class="btn-refresh" onclick="loadRoadmap()" id="roadmapRefreshBtn">
+            <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+            Refresh
+          </button>
+        </div>
+        <div id="roadmapTree"></div>
+
+        <div id="roadmapModal" class="modal-backdrop" style="display: none;">
+          <div class="card" style="max-width: 420px; width: 100%;">
+            <div class="card-header">
+              <h2 class="card-title" id="roadmapModalTitle">Add</h2>
+            </div>
+            <div class="card-body">
+              <div class="form-group">
+                <label class="form-label">Name</label>
+                <input type="text" class="form-input" id="roadmapModalName" placeholder="e.g. MAP & COLLECTION">
+              </div>
+              <div class="form-group" id="roadmapModalStatusWrap" style="display: none;">
+                <label class="form-label">Status</label>
+                <select class="form-select" id="roadmapModalStatus">
+                  <option value="exploring">Exploring</option>
+                  <option value="planned">Planned</option>
+                  <option value="dusted">Dusted</option>
+                  <option value="in_progress">In Progress</option>
+                  <option value="done">Done</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Sort order</label>
+                <input type="number" class="form-input" id="roadmapModalSort" value="0" min="0">
+              </div>
+              <div class="action-row">
+                <button class="btn btn-secondary btn-sm" onclick="roadmapModalClose()">Cancel</button>
+                <button class="btn btn-sm" onclick="roadmapModalSave()">Save</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Support Page Content -->
       <div id="supportPage" class="main-content hidden">
         <!-- Stats Row -->
@@ -1055,6 +1180,11 @@
     let filteredTickets = [];
     let currentTicket = null;
 
+    // Roadmap state
+    let roadmapRows = [];
+    let roadmapEditingId = null;
+    let roadmapAddUnderParentId = null;
+
     // ============ DOM Elements ============
     const $loadingScreen = document.getElementById('loadingScreen');
     const $authScreen = document.getElementById('authScreen');
@@ -1132,17 +1262,29 @@
       const supportPage = document.getElementById('supportPage');
       const refreshBtn = document.getElementById('refreshBtn');
 
-      if (page === 'support') {
+      const roadmapPage = document.getElementById('roadmapPage');
+
+      if (page === 'roadmap') {
+        header.querySelector('.page-title').textContent = 'Feature Roadmap';
+        header.querySelector('.page-subtitle').textContent = 'Manage branches and features (app & waitlist)';
+        mainContent.classList.add('hidden');
+        supportPage.classList.add('hidden');
+        roadmapPage.classList.remove('hidden');
+        refreshBtn.onclick = loadRoadmap;
+        loadRoadmap();
+      } else if (page === 'support') {
         header.querySelector('.page-title').textContent = 'Support Tickets';
         header.querySelector('.page-subtitle').textContent = 'Manage user support requests and feedback';
         mainContent.classList.add('hidden');
         supportPage.classList.remove('hidden');
+        roadmapPage.classList.add('hidden');
         refreshBtn.onclick = () => { loadSupportTickets(); loadSupportStats(); };
       } else if (page === 'submissions') {
         header.querySelector('.page-title').textContent = 'Resort Submissions';
         header.querySelector('.page-subtitle').textContent = 'Review and process new resort requests';
         mainContent.classList.remove('hidden');
         supportPage.classList.add('hidden');
+        roadmapPage.classList.add('hidden');
         refreshBtn.onclick = loadSubmissions;
       } else {
         // Placeholder for other pages
@@ -1150,6 +1292,7 @@
         header.querySelector('.page-subtitle').textContent = 'Coming soon...';
         mainContent.classList.add('hidden');
         supportPage.classList.add('hidden');
+        if (document.getElementById('roadmapPage')) document.getElementById('roadmapPage').classList.add('hidden');
       }
     }
 
@@ -1551,6 +1694,185 @@
         closed: 'Closed'
       };
       return labels[status] || status;
+    }
+
+    // ============ Roadmap ============
+    function roadmapMsg(text, isError) {
+      const el = document.getElementById('roadmapMsg');
+      el.textContent = text;
+      el.className = 'result-box ' + (isError ? 'error' : 'success');
+      el.style.display = 'block';
+      setTimeout(() => { el.style.display = 'none'; }, 4000);
+    }
+
+    async function loadRoadmap() {
+      if (!sb) return;
+      const treeEl = document.getElementById('roadmapTree');
+      const refreshBtn = document.getElementById('roadmapRefreshBtn');
+      if (refreshBtn) refreshBtn.classList.add('loading');
+      treeEl.innerHTML = '<div class="empty-state"><div class="spinner" style="margin: 0 auto 12px;"></div><p>Loading roadmap…</p></div>';
+      try {
+        const { data, error } = await sb.from('app_features').select('id, parent_id, name, node_type, status, sort_order').order('sort_order').order('name');
+        if (error) throw error;
+        roadmapRows = data || [];
+        buildRoadmapTree();
+      } catch (err) {
+        console.error('Roadmap load failed:', err);
+        treeEl.innerHTML = '<div class="result-box error">' + escapeHtml(err.message) + '</div>';
+      }
+      if (refreshBtn) refreshBtn.classList.remove('loading');
+    }
+
+    function buildRoadmapTree() {
+      const treeEl = document.getElementById('roadmapTree');
+      const branches = roadmapRows.filter(r => r.node_type === 'branch' && !r.parent_id)
+        .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0) || (a.name || '').localeCompare(b.name || ''));
+      const byParent = {};
+      roadmapRows.forEach(r => {
+        const pid = r.parent_id || 'root';
+        if (!byParent[pid]) byParent[pid] = [];
+        byParent[pid].push(r);
+      });
+      byParent.root = branches;
+      branches.forEach(b => {
+        (byParent[b.id] || []).sort((x, y) => (x.sort_order || 0) - (y.sort_order || 0) || (x.name || '').localeCompare(y.name || ''));
+      });
+
+      let html = '';
+      branches.forEach(branch => {
+        const children = (byParent[branch.id] || []).filter(r => r.node_type === 'feature');
+        html += '<div class="roadmap-branch" data-branch-id="' + branch.id + '">';
+        html += '<div class="roadmap-branch-header">';
+        html += '<span class="roadmap-branch-title">' + escapeHtml(branch.name) + '</span>';
+        html += '<div class="roadmap-branch-actions">';
+        html += '<button type="button" class="btn btn-secondary btn-sm" onclick="roadmapAddFeature(\'' + branch.id + '\')">+ Feature</button>';
+        html += '<button type="button" class="btn btn-secondary btn-sm" onclick="roadmapEditBranch(\'' + branch.id + '\', \'' + escapeAttr(branch.name) + '\', ' + (branch.sort_order || 0) + ')">Edit</button>';
+        html += '<button type="button" class="btn btn-danger btn-sm" onclick="roadmapDelete(\'' + branch.id + '\', \'' + escapeAttr(branch.name) + '\')">Delete</button>';
+        html += '</div></div>';
+        html += '<div class="roadmap-feature-list">';
+        if (children.length === 0) {
+          html += '<div class="roadmap-empty">No features. Click "+ Feature" to add one.</div>';
+        } else {
+          children.forEach(f => {
+            html += '<div class="roadmap-feature-row" data-id="' + f.id + '">';
+            html += '<div class="roadmap-feature-name"><input type="text" value="' + escapeAttr(f.name) + '" data-id="' + f.id + '" onblur="roadmapFeatureNameBlur(\'' + f.id + '\', this.value.trim())"></div>';
+            html += '<div class="roadmap-feature-status"><select data-id="' + f.id + '" onchange="roadmapFeatureStatusChange(\'' + f.id + '\', this.value)">';
+            ['exploring', 'planned', 'dusted', 'in_progress', 'done'].forEach(opt => {
+              html += '<option value="' + opt + '"' + (f.status === opt ? ' selected' : '') + '>' + (opt === 'in_progress' ? 'In Progress' : opt.charAt(0).toUpperCase() + opt.slice(1)) + '</option>';
+            });
+            html += '</select></div>';
+            html += '<button type="button" class="btn btn-danger btn-sm" onclick="roadmapDelete(\'' + f.id + '\', \'' + escapeAttr(f.name) + '\')">Delete</button>';
+            html += '</div>';
+          });
+        }
+        html += '</div></div>';
+      });
+      if (branches.length === 0) html = '<div class="roadmap-empty">No branches yet. Click "+ Add branch" to create one.</div>';
+      treeEl.innerHTML = html;
+    }
+
+    function escapeAttr(s) {
+      if (!s) return '';
+      return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    function roadmapAddBranch() {
+      roadmapEditingId = null;
+      roadmapAddUnderParentId = null;
+      document.getElementById('roadmapModalTitle').textContent = 'Add branch';
+      document.getElementById('roadmapModalName').value = '';
+      document.getElementById('roadmapModalName').placeholder = 'e.g. MAP & COLLECTION';
+      document.getElementById('roadmapModalStatusWrap').style.display = 'none';
+      document.getElementById('roadmapModalSort').value = '0';
+      document.getElementById('roadmapModal').style.display = 'flex';
+    }
+
+    function roadmapAddFeature(parentId) {
+      roadmapEditingId = null;
+      roadmapAddUnderParentId = parentId;
+      document.getElementById('roadmapModalTitle').textContent = 'Add feature';
+      document.getElementById('roadmapModalName').value = '';
+      document.getElementById('roadmapModalName').placeholder = 'e.g. World map with resort pins';
+      document.getElementById('roadmapModalStatusWrap').style.display = 'block';
+      document.getElementById('roadmapModalStatus').value = 'exploring';
+      document.getElementById('roadmapModalSort').value = '0';
+      document.getElementById('roadmapModal').style.display = 'flex';
+    }
+
+    function roadmapEditBranch(id, name, sort) {
+      roadmapEditingId = id;
+      roadmapAddUnderParentId = null;
+      document.getElementById('roadmapModalTitle').textContent = 'Edit branch';
+      document.getElementById('roadmapModalName').value = name || '';
+      document.getElementById('roadmapModalStatusWrap').style.display = 'none';
+      document.getElementById('roadmapModalSort').value = String(sort || 0);
+      document.getElementById('roadmapModal').style.display = 'flex';
+    }
+
+    function roadmapModalClose() {
+      document.getElementById('roadmapModal').style.display = 'none';
+    }
+
+    async function roadmapModalSave() {
+      const name = document.getElementById('roadmapModalName').value.trim();
+      if (!name) { roadmapMsg('Name is required', true); return; }
+      if (!sb) { roadmapMsg('Not connected', true); return; }
+      const sort = parseInt(document.getElementById('roadmapModalSort').value, 10) || 0;
+
+      try {
+        if (roadmapEditingId) {
+          const { error } = await sb.from('app_features').update({ name, sort_order: sort, updated_at: new Date().toISOString() }).eq('id', roadmapEditingId);
+          if (error) throw error;
+          roadmapMsg('Updated');
+        } else if (roadmapAddUnderParentId) {
+          const status = document.getElementById('roadmapModalStatus').value;
+          const { error } = await sb.from('app_features').insert({ parent_id: roadmapAddUnderParentId, name, node_type: 'feature', status, sort_order: sort });
+          if (error) throw error;
+          roadmapMsg('Feature added');
+        } else {
+          const { error } = await sb.from('app_features').insert({ parent_id: null, name, node_type: 'branch', status: null, sort_order: sort });
+          if (error) throw error;
+          roadmapMsg('Branch added');
+        }
+        roadmapModalClose();
+        loadRoadmap();
+      } catch (err) {
+        roadmapMsg(err.message, true);
+      }
+    }
+
+    async function roadmapFeatureNameBlur(id, value) {
+      if (!value || !sb) return;
+      try {
+        const { error } = await sb.from('app_features').update({ name: value, updated_at: new Date().toISOString() }).eq('id', id);
+        if (error) throw error;
+      } catch (err) {
+        roadmapMsg(err.message, true);
+      }
+    }
+
+    async function roadmapFeatureStatusChange(id, status) {
+      if (!sb) return;
+      try {
+        const { error } = await sb.from('app_features').update({ status, updated_at: new Date().toISOString() }).eq('id', id);
+        if (error) throw error;
+        roadmapMsg('Status updated');
+      } catch (err) {
+        roadmapMsg(err.message, true);
+      }
+    }
+
+    async function roadmapDelete(id, name) {
+      if (!confirm('Delete “‘ + (name || id) + '”? Deleting a branch will also remove all its features.')) return;
+      if (!sb) return;
+      try {
+        const { error } = await sb.from('app_features').delete().eq('id', id);
+        if (error) throw error;
+        roadmapMsg('Deleted');
+        loadRoadmap();
+      } catch (err) {
+        roadmapMsg(err.message, true);
+      }
     }
 
     function getTicketSubject(ticket) {
