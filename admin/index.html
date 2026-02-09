@@ -1253,6 +1253,16 @@
       console.error('Failed to initialize Supabase:', e);
     }
 
+    // Users iframe can request Supabase client when it is ready (avoids load-event timing issues)
+    window.addEventListener('message', function (e) {
+      if (!e.data || e.data.type !== 'slopestory-admin-iframe-ready' || e.data.tab !== 'users') return;
+      if (!e.source || e.source === window) return;
+      if (!sb) return;
+      try {
+        e.source.__SUPABASE_CLIENT__ = sb;
+      } catch (err) { /* same-origin only */ }
+    });
+
     // Global image onerror (avoids nested quotes in inline handlers)
     window._imgLoadErr = function (el) {
       if (el && el.parentElement) {
@@ -1333,6 +1343,7 @@
     }
 
     let resortsFrameInjectDone = false;
+    let usersFrameInjectDone = false;
     function showDashboard(email) {
       $loadingScreen.classList.add('hidden');
       $authScreen.classList.add('hidden');
@@ -1350,6 +1361,17 @@
             } catch (e) { /* same-origin only */ }
           });
           resortsFrameInjectDone = true;
+        }
+      }
+      if (!usersFrameInjectDone && sb) {
+        const iframe = document.getElementById('usersFrame');
+        if (iframe) {
+          iframe.addEventListener('load', function injectUsersSupabase() {
+            try {
+              if (iframe.contentWindow && sb) iframe.contentWindow.__SUPABASE_CLIENT__ = sb;
+            } catch (e) { /* same-origin only */ }
+          });
+          usersFrameInjectDone = true;
         }
       }
 

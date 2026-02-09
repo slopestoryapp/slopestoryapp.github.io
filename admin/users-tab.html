@@ -350,13 +350,18 @@
             load();
             return;
           }
+          if (window.parent !== window) {
+            try {
+              window.parent.postMessage({ type: 'slopestory-admin-iframe-ready', tab: 'users' }, '*');
+            } catch (e) { /* cross-origin */ }
+          }
           var attempts = 0;
           var t = setInterval(function () {
             if (window.__SUPABASE_CLIENT__) {
               clearInterval(t);
               supabase = window.__SUPABASE_CLIENT__;
               load();
-            } else if (++attempts >= 100) {
+            } else if (++attempts >= 200) {
               clearInterval(t);
               load();
             }
