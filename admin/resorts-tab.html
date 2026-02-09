@@ -105,6 +105,7 @@
         background: var(--surface);
         border-radius: 12px;
         border: 1px solid var(--border);
+        min-height: 200px;
         max-height: 60vh;
         overflow-y: auto;
       }
@@ -274,7 +275,7 @@
       </div>
       <button type="button" class="btn btn-ghost" id="refresh-btn">Refresh</button>
     </div>
-    <div id="list" class="resort-list"></div>
+    <div id="list" class="resort-list"><div class="loading">Loading…</div></div>
 
     <div id="modal" class="modal-backdrop" style="display: none">
       <div class="modal">
@@ -606,11 +607,12 @@
               load();
             } else if (++attempts >= maxAttempts) {
               clearInterval(t);
+              if (!listEl) return;
               load();
             }
           }, 50);
         }
-        runWhenReady();
+        if (listEl) runWhenReady();
       })();
     </script>
   </body>
