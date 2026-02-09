@@ -1,0 +1,529 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Resorts – Admin</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+    <style>
+      :root {
+        --bg: #101e2a;
+        --surface: #2a3744;
+        --primary: #4298d2;
+        --text: #ffffff;
+        --text-muted: #94a3b8;
+        --border: #374757;
+        --success: #22c55e;
+        --danger: #ef4444;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        font-family: system-ui, -apple-system, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        margin: 0;
+        padding: 16px;
+      }
+      h1 {
+        font-size: 1.25rem;
+        margin: 0 0 16px;
+        color: var(--primary);
+      }
+      .toolbar {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        margin-bottom: 16px;
+        flex-wrap: wrap;
+      }
+      .search-wrap {
+        flex: 1;
+        min-width: 200px;
+      }
+      .search-wrap input {
+        width: 100%;
+        padding: 10px 14px;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        background: var(--surface);
+        color: var(--text);
+        font-size: 14px;
+      }
+      .search-wrap input::placeholder {
+        color: var(--text-muted);
+      }
+      .search-wrap input:focus {
+        outline: none;
+        border-color: var(--primary);
+      }
+      .btn {
+        padding: 8px 14px;
+        border-radius: 8px;
+        border: none;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 500;
+      }
+      .btn-primary {
+        background: var(--primary);
+        color: white;
+      }
+      .btn-primary:hover {
+        filter: brightness(1.1);
+      }
+      .btn-ghost {
+        background: var(--surface);
+        color: var(--text);
+        border: 1px solid var(--border);
+      }
+      .btn-ghost:hover {
+        background: #354556;
+      }
+      .msg {
+        padding: 8px 12px;
+        border-radius: 8px;
+        margin-bottom: 12px;
+      }
+      .msg.error {
+        background: rgba(239, 68, 68, 0.2);
+        color: #fca5a5;
+      }
+      .msg.success {
+        background: rgba(34, 197, 94, 0.2);
+        color: #86efac;
+      }
+      .resort-list {
+        background: var(--surface);
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        max-height: 60vh;
+        overflow-y: auto;
+      }
+      .resort-row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--border);
+        cursor: pointer;
+      }
+      .resort-row:last-child {
+        border-bottom: none;
+      }
+      .resort-row:hover {
+        background: #354556;
+      }
+      .resort-row .name {
+        font-weight: 600;
+        flex: 1;
+        min-width: 0;
+      }
+      .resort-row .meta {
+        font-size: 13px;
+        color: var(--text-muted);
+      }
+      .chip {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 11px;
+        font-weight: 600;
+      }
+      .chip-verified {
+        background: #166534;
+        color: #dcfce7;
+      }
+      .chip-unverified {
+        background: #64748b;
+        color: #f1f5f9;
+      }
+      .loading, .empty {
+        padding: 24px;
+        text-align: center;
+        color: var(--text-muted);
+      }
+      .modal-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.6);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 100;
+        padding: 16px;
+        overflow-y: auto;
+      }
+      .modal {
+        background: var(--surface);
+        border-radius: 12px;
+        padding: 20px;
+        max-width: 560px;
+        width: 100%;
+        max-height: 90vh;
+        overflow-y: auto;
+        border: 1px solid var(--border);
+      }
+      .modal h3 {
+        margin: 0 0 16px;
+        font-size: 1.1rem;
+        color: var(--primary);
+      }
+      .form-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px 16px;
+      }
+      .form-grid.full {
+        grid-template-columns: 1fr;
+      }
+      .field {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .field label {
+        font-size: 12px;
+        color: var(--text-muted);
+      }
+      .field input,
+      .field select,
+      .field textarea {
+        padding: 8px 10px;
+        border-radius: 6px;
+        border: 1px solid var(--border);
+        background: var(--bg);
+        color: var(--text);
+        font-size: 14px;
+      }
+      .field textarea {
+        min-height: 60px;
+        resize: vertical;
+      }
+      .field input[type="number"] {
+        width: 100%;
+      }
+      .field input:disabled {
+        opacity: 0.7;
+        cursor: not-allowed;
+      }
+      .modal-actions {
+        display: flex;
+        gap: 8px;
+        justify-content: flex-end;
+        margin-top: 20px;
+        padding-top: 16px;
+        border-top: 1px solid var(--border);
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Resorts</h1>
+    <div id="msg"></div>
+    <div class="toolbar">
+      <div class="search-wrap">
+        <input type="text" id="search" placeholder="Search by name, country, or region…" autocomplete="off" />
+      </div>
+      <button type="button" class="btn btn-ghost" id="refresh-btn">Refresh</button>
+    </div>
+    <div id="list" class="resort-list"></div>
+
+    <div id="modal" class="modal-backdrop" style="display: none">
+      <div class="modal">
+        <h3 id="modal-title">Resort details</h3>
+        <form id="form">
+          <div class="form-grid">
+            <div class="field full">
+              <label for="f-name">Name *</label>
+              <input type="text" id="f-name" required />
+            </div>
+            <div class="field">
+              <label for="f-country">Country *</label>
+              <input type="text" id="f-country" required />
+            </div>
+            <div class="field">
+              <label for="f-country_code">Country code *</label>
+              <input type="text" id="f-country_code" required maxlength="2" placeholder="e.g. US" />
+            </div>
+            <div class="field full">
+              <label for="f-region">Region *</label>
+              <input type="text" id="f-region" required />
+            </div>
+            <div class="field">
+              <label for="f-lat">Latitude *</label>
+              <input type="number" id="f-lat" step="any" required />
+            </div>
+            <div class="field">
+              <label for="f-lng">Longitude *</label>
+              <input type="number" id="f-lng" step="any" required />
+            </div>
+            <div class="field full">
+              <label for="f-website">Website</label>
+              <input type="url" id="f-website" placeholder="https://…" />
+            </div>
+            <div class="field">
+              <label for="f-vertical_m">Vertical (m)</label>
+              <input type="number" id="f-vertical_m" min="0" />
+            </div>
+            <div class="field">
+              <label for="f-runs">Runs</label>
+              <input type="number" id="f-runs" min="0" />
+            </div>
+            <div class="field">
+              <label for="f-lifts">Lifts</label>
+              <input type="number" id="f-lifts" min="0" />
+            </div>
+            <div class="field">
+              <label for="f-annual_snowfall_cm">Annual snowfall (cm)</label>
+              <input type="number" id="f-annual_snowfall_cm" min="0" />
+            </div>
+            <div class="field">
+              <label for="f-beginner_pct">Beginner %</label>
+              <input type="number" id="f-beginner_pct" min="0" max="100" />
+            </div>
+            <div class="field">
+              <label for="f-intermediate_pct">Intermediate %</label>
+              <input type="number" id="f-intermediate_pct" min="0" max="100" />
+            </div>
+            <div class="field">
+              <label for="f-advanced_pct">Advanced %</label>
+              <input type="number" id="f-advanced_pct" min="0" max="100" />
+            </div>
+            <div class="field full">
+              <label for="f-cover_image_url">Cover image URL</label>
+              <input type="url" id="f-cover_image_url" placeholder="https://…" />
+            </div>
+            <div class="field">
+              <label for="f-verified">Verified (shown on map)</label>
+              <select id="f-verified">
+                <option value="false">No</option>
+                <option value="true">Yes</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="f-pass_affiliation">Pass affiliation</label>
+              <input type="text" id="f-pass_affiliation" placeholder="e.g. Ikon, Epic" />
+            </div>
+            <div class="field">
+              <label for="f-season_open">Season open</label>
+              <input type="text" id="f-season_open" placeholder="e.g. November" />
+            </div>
+            <div class="field">
+              <label for="f-season_close">Season close</label>
+              <input type="text" id="f-season_close" placeholder="e.g. April" />
+            </div>
+            <div class="field">
+              <label for="f-has_night_skiing">Night skiing</label>
+              <select id="f-has_night_skiing">
+                <option value="">—</option>
+                <option value="false">No</option>
+                <option value="true">Yes</option>
+              </select>
+            </div>
+            <div class="field full">
+              <label for="f-instagram_handle">Instagram handle</label>
+              <input type="text" id="f-instagram_handle" placeholder="Without @" />
+            </div>
+            <div class="field full">
+              <label for="f-description">Description</label>
+              <textarea id="f-description" placeholder="Short description or fun fact"></textarea>
+            </div>
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-ghost" id="modal-cancel">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="modal-save">Save</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <script>
+      (function () {
+        var SUPABASE_URL = window.__SUPABASE_URL__ || '';
+        var SUPABASE_ANON_KEY = window.__SUPABASE_ANON_KEY__ || '';
+        var supabase = window.__SUPABASE_CLIENT__ || (SUPABASE_URL && SUPABASE_ANON_KEY ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null);
+
+        var listEl = document.getElementById('list');
+        var msgEl = document.getElementById('msg');
+        var searchEl = document.getElementById('search');
+        var modalEl = document.getElementById('modal');
+        var formEl = document.getElementById('form');
+
+        var allResorts = [];
+        var selectedId = null;
+
+        function showMsg(text, isError) {
+          msgEl.textContent = text;
+          msgEl.className = 'msg ' + (isError ? 'error' : 'success');
+          msgEl.style.display = 'block';
+          setTimeout(function () { msgEl.style.display = 'none'; }, 4000);
+        }
+
+        function escapeHtml(s) {
+          if (!s) return '';
+          var d = document.createElement('div');
+          d.textContent = s;
+          return d.innerHTML;
+        }
+
+        function numVal(v) {
+          if (v === '' || v === null || v === undefined) return null;
+          var n = Number(v);
+          return isNaN(n) ? null : n;
+        }
+
+        function boolVal(v) {
+          if (v === '' || v === null || v === undefined) return null;
+          return v === 'true' || v === true;
+        }
+
+        function filterResorts() {
+          var q = (searchEl.value || '').trim().toLowerCase();
+          if (!q) return allResorts.slice(0, 200);
+          return allResorts.filter(function (r) {
+            return (r.name && r.name.toLowerCase().indexOf(q) !== -1) ||
+              (r.country && r.country.toLowerCase().indexOf(q) !== -1) ||
+              (r.region && r.region.toLowerCase().indexOf(q) !== -1) ||
+              (r.country_code && r.country_code.toLowerCase().indexOf(q) !== -1);
+          }).slice(0, 200);
+        }
+
+        function renderList() {
+          var filtered = filterResorts();
+          if (filtered.length === 0) {
+            listEl.innerHTML = '<div class="empty">' + (allResorts.length === 0 ? 'No resorts loaded. Check Supabase config and sign in as admin.' : 'No resorts match your search.') + '</div>';
+            return;
+          }
+          var html = '';
+          filtered.forEach(function (r) {
+            var meta = [r.region || '', r.country || ''].filter(Boolean).join(' · ');
+            var chip = r.verified ? '<span class="chip chip-verified">Verified</span>' : '<span class="chip chip-unverified">Unverified</span>';
+            html += '<div class="resort-row" data-id="' + escapeHtml(r.id) + '">';
+            html += '<span class="name">' + escapeHtml(r.name || '') + '</span>';
+            html += '<span class="meta">' + escapeHtml(meta) + '</span>';
+            html += chip;
+            html += '</div>';
+          });
+          listEl.innerHTML = html;
+          listEl.querySelectorAll('.resort-row').forEach(function (row) {
+            row.addEventListener('click', function () { openDetail(row.getAttribute('data-id')); });
+          });
+        }
+
+        function openDetail(id) {
+          var r = allResorts.find(function (x) { return x.id === id; });
+          if (!r) return;
+          selectedId = id;
+          document.getElementById('modal-title').textContent = r.name || 'Resort details';
+          document.getElementById('f-name').value = r.name || '';
+          document.getElementById('f-country').value = r.country || '';
+          document.getElementById('f-country_code').value = r.country_code || '';
+          document.getElementById('f-region').value = r.region || '';
+          document.getElementById('f-lat').value = r.lat != null ? r.lat : '';
+          document.getElementById('f-lng').value = r.lng != null ? r.lng : '';
+          document.getElementById('f-website').value = r.website || '';
+          document.getElementById('f-vertical_m').value = r.vertical_m != null ? r.vertical_m : '';
+          document.getElementById('f-runs').value = r.runs != null ? r.runs : '';
+          document.getElementById('f-lifts').value = r.lifts != null ? r.lifts : '';
+          document.getElementById('f-annual_snowfall_cm').value = r.annual_snowfall_cm != null ? r.annual_snowfall_cm : '';
+          document.getElementById('f-beginner_pct').value = r.beginner_pct != null ? r.beginner_pct : '';
+          document.getElementById('f-intermediate_pct').value = r.intermediate_pct != null ? r.intermediate_pct : '';
+          document.getElementById('f-advanced_pct').value = r.advanced_pct != null ? r.advanced_pct : '';
+          document.getElementById('f-cover_image_url').value = r.cover_image_url || '';
+          document.getElementById('f-verified').value = r.verified ? 'true' : 'false';
+          document.getElementById('f-pass_affiliation').value = r.pass_affiliation || '';
+          document.getElementById('f-season_open').value = r.season_open || '';
+          document.getElementById('f-season_close').value = r.season_close || '';
+          document.getElementById('f-has_night_skiing').value = r.has_night_skiing === true ? 'true' : (r.has_night_skiing === false ? 'false' : '');
+          document.getElementById('f-instagram_handle').value = r.instagram_handle || '';
+          document.getElementById('f-description').value = r.description || '';
+          modalEl.style.display = 'flex';
+        }
+
+        function closeModal() {
+          modalEl.style.display = 'none';
+          selectedId = null;
+        }
+
+        function buildPayload() {
+          return {
+            name: document.getElementById('f-name').value.trim() || null,
+            country: document.getElementById('f-country').value.trim() || null,
+            country_code: document.getElementById('f-country_code').value.trim() || null,
+            region: document.getElementById('f-region').value.trim() || null,
+            lat: numVal(document.getElementById('f-lat').value),
+            lng: numVal(document.getElementById('f-lng').value),
+            website: document.getElementById('f-website').value.trim() || null,
+            vertical_m: numVal(document.getElementById('f-vertical_m').value),
+            runs: numVal(document.getElementById('f-runs').value),
+            lifts: numVal(document.getElementById('f-lifts').value),
+            annual_snowfall_cm: numVal(document.getElementById('f-annual_snowfall_cm').value),
+            beginner_pct: numVal(document.getElementById('f-beginner_pct').value),
+            intermediate_pct: numVal(document.getElementById('f-intermediate_pct').value),
+            advanced_pct: numVal(document.getElementById('f-advanced_pct').value),
+            cover_image_url: document.getElementById('f-cover_image_url').value.trim() || null,
+            verified: document.getElementById('f-verified').value === 'true',
+            pass_affiliation: document.getElementById('f-pass_affiliation').value.trim() || null,
+            season_open: document.getElementById('f-season_open').value.trim() || null,
+            season_close: document.getElementById('f-season_close').value.trim() || null,
+            has_night_skiing: boolVal(document.getElementById('f-has_night_skiing').value),
+            instagram_handle: document.getElementById('f-instagram_handle').value.trim() || null,
+            description: document.getElementById('f-description').value.trim() || null
+          };
+        }
+
+        function load() {
+          if (!supabase) {
+            listEl.innerHTML = '<div class="empty">Configure Supabase: set window.__SUPABASE_URL__ and window.__SUPABASE_ANON_KEY__ (or window.__SUPABASE_CLIENT__) before loading. Sign in as admin to read/update resorts.</div>';
+            return;
+          }
+          listEl.innerHTML = '<div class="loading">Loading resorts…</div>';
+          supabase.from('resorts').select('*').order('name').then(function (r) {
+            if (r.error) {
+              listEl.innerHTML = '<div class="msg error">' + escapeHtml(r.error.message) + '</div>';
+              return;
+            }
+            allResorts = r.data || [];
+            renderList();
+          });
+        }
+
+        searchEl.addEventListener('input', function () { renderList(); });
+        searchEl.addEventListener('keydown', function (e) {
+          if (e.key === 'Escape') searchEl.blur();
+        });
+
+        document.getElementById('refresh-btn').addEventListener('click', load);
+        document.getElementById('modal-cancel').addEventListener('click', closeModal);
+
+        formEl.addEventListener('submit', function (e) {
+          e.preventDefault();
+          if (!supabase || !selectedId) return;
+          var payload = buildPayload();
+          if (payload.lat == null || payload.lng == null) {
+            showMsg('Latitude and longitude are required.', true);
+            return;
+          }
+          supabase.from('resorts').update(payload).eq('id', selectedId).then(function (res) {
+            if (res.error) {
+              showMsg(res.error.message, true);
+              return;
+            }
+            var idx = allResorts.findIndex(function (x) { return x.id === selectedId; });
+            if (idx !== -1) allResorts[idx] = Object.assign({}, allResorts[idx], payload);
+            showMsg('Resort saved.');
+            closeModal();
+            renderList();
+          });
+        });
+
+        modalEl.addEventListener('click', function (e) {
+          if (e.target === modalEl) closeModal();
+        });
+
+        load();
+      })();
+    </script>
+  </body>
+</html>
