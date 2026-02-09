@@ -554,7 +554,8 @@
         document.getElementById('modal-delete').addEventListener('click', function () {
           if (!supabase || !selectedId) return;
           var name = document.getElementById('f-name').value.trim() || 'This resort';
-          if (!confirm('Delete “‘ + name + '” permanently?\n\nThis will remove the resort and all linked data: visits to this resort, wishlist entries, feature photo submissions, and resort summaries. User profiles and support tickets that referenced this resort will be unlinked (not deleted).\n\nThis cannot be undone.')) return;
+          var deleteMsg = "Delete \"" + name + "\" permanently?\n\nThis will remove the resort and all linked data: visits to this resort, wishlist entries, feature photo submissions, and resort summaries. User profiles and support tickets that referenced this resort will be unlinked (not deleted).\n\nThis cannot be undone.";
+          if (!confirm(deleteMsg)) return;
           supabase.from('resorts').delete().eq('id', selectedId).then(function (res) {
             if (res.error) {
               showMsg(res.error.message, true);
