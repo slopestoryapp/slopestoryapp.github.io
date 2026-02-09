@@ -1327,6 +1327,7 @@
       }
     }
 
+    let resortsFrameInjectDone = false;
     function showDashboard(email) {
       $loadingScreen.classList.add('hidden');
       $authScreen.classList.add('hidden');
@@ -1334,6 +1335,18 @@
 
       document.getElementById('userEmail').textContent = email;
       document.getElementById('userAvatar').textContent = email.charAt(0).toUpperCase();
+
+      if (!resortsFrameInjectDone && sb) {
+        const iframe = document.getElementById('resortsFrame');
+        if (iframe) {
+          iframe.addEventListener('load', function injectResortsSupabase() {
+            try {
+              if (iframe.contentWindow && sb) iframe.contentWindow.__SUPABASE_CLIENT__ = sb;
+            } catch (e) { /* same-origin only */ }
+          });
+          resortsFrameInjectDone = true;
+        }
+      }
 
       loadSubmissions();
       loadStats();
@@ -1371,8 +1384,8 @@
         if (iframe && sb) {
           try {
             iframe.contentWindow.__SUPABASE_CLIENT__ = sb;
-            iframe.src = 'resorts-tab.html';
-          } catch (e) { /* cross-origin or not loaded */ }
+          } catch (e) { /* same-origin only */ }
+          iframe.src = 'resorts-tab.html?' + Date.now();
         }
       } else if (page === 'roadmap') {
         header.querySelector('.page-title').textContent = 'Feature Roadmap';
