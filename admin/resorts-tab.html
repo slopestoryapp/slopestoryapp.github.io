@@ -264,6 +264,46 @@
         display: flex;
         gap: 8px;
       }
+      .duplicate-card {
+        margin-top: 24px;
+        background: var(--surface);
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        padding: 16px;
+      }
+      .duplicate-card-title {
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--primary);
+        margin-bottom: 12px;
+      }
+      .duplicate-group {
+        margin-bottom: 16px;
+      }
+      .duplicate-group:last-child {
+        margin-bottom: 0;
+      }
+      .duplicate-group-title {
+        font-size: 12px;
+        color: var(--text-muted);
+        margin-bottom: 6px;
+      }
+      .duplicate-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        border-radius: 8px;
+        margin-bottom: 4px;
+        background: var(--bg);
+        cursor: pointer;
+        font-size: 14px;
+      }
+      .duplicate-row:hover {
+        background: #354556;
+      }
+      .duplicate-row .name { font-weight: 500; flex: 1; }
+      .duplicate-row .meta { font-size: 12px; color: var(--text-muted); }
     </style>
   </head>
   <body>
@@ -276,6 +316,8 @@
       <button type="button" class="btn btn-ghost" id="refresh-btn">Refresh</button>
     </div>
     <div id="list" class="resort-list"><div class="loading">Loading…</div></div>
+
+    <div id="duplicate-warnings" class="duplicate-card" style="display: none;"></div>
 
     <div id="modal" class="modal-backdrop" style="display: none">
       <div class="modal">
@@ -444,10 +486,54 @@
           }).slice(0, 200);
         }
 
+        function getDuplicateGroups() {
+          var keyToResorts = {};
+          allResorts.forEach(function (r) {
+            var name = (r.name || '').trim().toLowerCase();
+            var country = (r.country || '').trim().toLowerCase() || (r.country_code || '').trim().toLowerCase();
+            if (!name) return;
+            var key = name + '\0' + country;
+            if (!keyToResorts[key]) keyToResorts[key] = [];
+            keyToResorts[key].push(r);
+          });
+          return Object.keys(keyToResorts).filter(function (k) { return keyToResorts[k].length > 1; }).map(function (k) { return keyToResorts[k]; });
+        }
+
+        function renderDuplicates() {
+          var container = document.getElementById('duplicate-warnings');
+          if (!container) return;
+          var groups = getDuplicateGroups();
+          if (groups.length === 0) {
+            container.style.display = 'none';
+            return;
+          }
+          container.style.display = 'block';
+          var html = '<div class="duplicate-card-title">Potential duplicates (same name + country)</div>';
+          groups.forEach(function (resorts) {
+            var label = escapeHtml(resorts[0].name || '') + ' · ' + escapeHtml(resorts[0].country || resorts[0].country_code || '');
+            html += '<div class="duplicate-group">';
+            html += '<div class="duplicate-group-title">' + label + ' (' + resorts.length + ' rows)</div>';
+            resorts.forEach(function (r) {
+              var meta = [r.region || '', r.id].filter(Boolean).join(' · ');
+              html += '<div class="duplicate-row" data-id="' + escapeHtml(r.id) + '">';
+              html += '<span class="name">' + escapeHtml(r.name || '') + '</span>';
+              html += '<span class="meta">' + meta + '</span>';
+              html += (r.verified ? '<span class="chip chip-verified">Verified</span>' : '');
+              html += '</div>';
+            });
+            html += '</div>';
+          });
+          container.innerHTML = html;
+          container.querySelectorAll('.duplicate-row').forEach(function (row) {
+            row.addEventListener('click', function () { openDetail(row.getAttribute('data-id')); });
+          });
+        }
+
         function renderList() {
           var filtered = filterResorts();
           if (filtered.length === 0) {
             listEl.innerHTML = '<div class="empty">' + (allResorts.length === 0 ? 'No resorts loaded. Check Supabase config and sign in as admin.' : 'No resorts match your search.') + '</div>';
+            renderDuplicates();
             return;
           }
           var html = '';
@@ -464,6 +550,7 @@
           listEl.querySelectorAll('.resort-row').forEach(function (row) {
             row.addEventListener('click', function () { openDetail(row.getAttribute('data-id')); });
           });
+          renderDuplicates();
         }
 
         function openDetail(id) {
@@ -554,8 +641,7 @@
         document.getElementById('modal-delete').addEventListener('click', function () {
           if (!supabase || !selectedId) return;
           var name = document.getElementById('f-name').value.trim() || 'This resort';
-          var deleteMsg = "Delete \"" + name + "\" permanently?\n\nThis will remove the resort and all linked data: visits to this resort, wishlist entries, feature photo submissions, and resort summaries. User profiles and support tickets that referenced this resort will be unlinked (not deleted).\n\nThis cannot be undone.";
-          if (!confirm(deleteMsg)) return;
+          if (!confirm('Delete “‘ + name + '” permanently?\n\nThis will remove the resort and all linked data: visits to this resort, wishlist entries, feature photo submissions, and resort summaries. User profiles and support tickets that referenced this resort will be unlinked (not deleted).\n\nThis cannot be undone.')) return;
           supabase.from('resorts').delete().eq('id', selectedId).select('id').then(function (res) {
             if (res.error) {
               showMsg(res.error.message, true);
