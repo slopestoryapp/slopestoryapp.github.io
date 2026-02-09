@@ -1151,6 +1151,11 @@
         <iframe id="resortsFrame" src="resorts-tab.html" style="width:100%; height:80vh; border:0; border-radius: 10px;"></iframe>
       </div>
 
+      <!-- Users Page Content -->
+      <div id="usersPage" class="main-content hidden">
+        <iframe id="usersFrame" src="users-tab.html" style="width:100%; height:80vh; border:0; border-radius: 10px;"></iframe>
+      </div>
+
       <!-- Support Page Content -->
       <div id="supportPage" class="main-content hidden">
         <!-- Stats Row -->
@@ -1371,9 +1376,10 @@
       const supportPage = document.getElementById('supportPage');
       const roadmapPage = document.getElementById('roadmapPage');
       const resortsPage = document.getElementById('resortsPage');
+      const usersPage = document.getElementById('usersPage');
       const refreshBtn = document.getElementById('refreshBtn');
 
-      const allPages = [submissionsPage, featurePhotosPage, supportPage, roadmapPage, resortsPage].filter(Boolean);
+      const allPages = [submissionsPage, featurePhotosPage, supportPage, roadmapPage, resortsPage, usersPage].filter(Boolean);
       allPages.forEach(p => p.classList.add('hidden'));
 
       if (page === 'resorts') {
@@ -1386,6 +1392,17 @@
             iframe.contentWindow.__SUPABASE_CLIENT__ = sb;
           } catch (e) { /* same-origin only */ }
           iframe.src = 'resorts-tab.html?' + Date.now();
+        }
+      } else if (page === 'users') {
+        header.querySelector('.page-title').textContent = 'Users';
+        header.querySelector('.page-subtitle').textContent = 'View and edit profiles (no passwords). Delete removes auth and linked data.';
+        usersPage.classList.remove('hidden');
+        const iframe = document.getElementById('usersFrame');
+        if (iframe && sb) {
+          try {
+            iframe.contentWindow.__SUPABASE_CLIENT__ = sb;
+          } catch (e) { /* same-origin only */ }
+          iframe.src = 'users-tab.html?' + Date.now();
         }
       } else if (page === 'roadmap') {
         header.querySelector('.page-title').textContent = 'Feature Roadmap';

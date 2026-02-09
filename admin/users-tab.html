@@ -1,0 +1,369 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Users – Admin</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+    <style>
+      :root {
+        --bg: #101e2a;
+        --surface: #2a3744;
+        --primary: #4298d2;
+        --text: #ffffff;
+        --text-muted: #94a3b8;
+        --border: #374757;
+        --success: #22c55e;
+        --danger: #ef4444;
+      }
+      * { box-sizing: border-box; }
+      body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 16px; }
+      h1 { font-size: 1.25rem; margin: 0 0 16px; color: var(--primary); }
+      .toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
+      .search-wrap { flex: 1; min-width: 200px; }
+      .search-wrap input {
+        width: 100%; padding: 10px 14px; border-radius: 8px; border: 1px solid var(--border);
+        background: var(--surface); color: var(--text); font-size: 14px;
+      }
+      .search-wrap input:focus { outline: none; border-color: var(--primary); }
+      .btn { padding: 8px 14px; border-radius: 8px; border: none; cursor: pointer; font-size: 14px; font-weight: 500; }
+      .btn-primary { background: var(--primary); color: white; }
+      .btn-ghost { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
+      .btn-danger { background: var(--danger); color: white; }
+      .msg { padding: 8px 12px; border-radius: 8px; margin-bottom: 12px; }
+      .msg.error { background: rgba(239, 68, 68, 0.2); color: #fca5a5; }
+      .msg.success { background: rgba(34, 197, 94, 0.2); color: #86efac; }
+      .user-list {
+        background: var(--surface); border-radius: 12px; border: 1px solid var(--border);
+        min-height: 200px; max-height: 60vh; overflow-y: auto;
+      }
+      .user-row {
+        display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--border); cursor: pointer;
+      }
+      .user-row:hover { background: #354556; }
+      .user-row .name { font-weight: 600; flex: 1; min-width: 0; }
+      .user-row .meta { font-size: 13px; color: var(--text-muted); }
+      .loading, .empty { padding: 24px; text-align: center; color: var(--text-muted); }
+      .modal-backdrop {
+        position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6); display: flex; align-items: center; justify-content: center;
+        z-index: 100; padding: 16px; overflow-y: auto;
+      }
+      .modal {
+        background: var(--surface); border-radius: 14px; max-width: 560px; width: 100%; max-height: 90vh;
+        display: flex; flex-direction: column; border: 1px solid var(--border); overflow: hidden; box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+      }
+      .modal-header { flex-shrink: 0; padding: 20px 20px 0; }
+      .modal h3 { margin: 0 0 16px; font-size: 1.1rem; color: var(--primary); }
+      .modal-body { flex: 1; min-height: 0; overflow-y: auto; padding: 0 20px 20px; }
+      .modal-body::-webkit-scrollbar { width: 8px; }
+      .modal-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+      .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; }
+      .form-grid.full { grid-template-columns: 1fr; }
+      .field { display: flex; flex-direction: column; gap: 4px; }
+      .field label { font-size: 12px; color: var(--text-muted); }
+      .field input, .field select {
+        padding: 8px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 14px;
+      }
+      .field input:disabled { opacity: 0.7; cursor: not-allowed; }
+      .modal-actions {
+        flex-shrink: 0; display: flex; gap: 8px; justify-content: space-between; align-items: center;
+        padding: 16px 20px 20px; border-top: 1px solid var(--border); background: var(--surface);
+      }
+      .modal-actions-right { display: flex; gap: 8px; }
+      .security-note { font-size: 12px; color: var(--text-muted); margin-top: 8px; }
+    </style>
+  </head>
+  <body>
+    <h1>Users</h1>
+    <div id="msg"></div>
+    <div class="toolbar">
+      <div class="search-wrap">
+        <input type="text" id="search" placeholder="Search by email, name, or username…" autocomplete="off" />
+      </div>
+      <button type="button" class="btn btn-ghost" id="refresh-btn">Refresh</button>
+    </div>
+    <div id="list" class="user-list"><div class="loading">Loading…</div></div>
+
+    <div id="modal" class="modal-backdrop" style="display: none">
+      <div class="modal">
+        <div class="modal-header">
+          <h3 id="modal-title">User details</h3>
+        </div>
+        <div class="modal-body">
+          <form id="form">
+            <div class="form-grid">
+              <div class="field full">
+                <label for="f-id">User ID</label>
+                <input type="text" id="f-id" disabled />
+              </div>
+              <div class="field full">
+                <label for="f-email">Email</label>
+                <input type="email" id="f-email" required />
+              </div>
+              <div class="field">
+                <label for="f-first_name">First name</label>
+                <input type="text" id="f-first_name" required />
+              </div>
+              <div class="field">
+                <label for="f-last_name">Last name</label>
+                <input type="text" id="f-last_name" />
+              </div>
+              <div class="field full">
+                <label for="f-username">Username</label>
+                <input type="text" id="f-username" />
+              </div>
+              <div class="field full">
+                <label for="f-avatar_url">Avatar URL</label>
+                <input type="url" id="f-avatar_url" />
+              </div>
+              <div class="field">
+                <label for="f-units">Units</label>
+                <select id="f-units">
+                  <option value="metric">metric</option>
+                  <option value="imperial">imperial</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="f-home_resort_id">Home resort ID</label>
+                <input type="text" id="f-home_resort_id" placeholder="UUID or empty" />
+              </div>
+              <div class="field">
+                <label for="f-country">Country</label>
+                <input type="text" id="f-country" />
+              </div>
+              <div class="field">
+                <label for="f-country_code">Country code</label>
+                <input type="text" id="f-country_code" maxlength="2" placeholder="e.g. US" />
+              </div>
+              <div class="field">
+                <label for="f-ski_experience">Ski experience</label>
+                <select id="f-ski_experience">
+                  <option value="">—</option>
+                  <option value="beginner">beginner</option>
+                  <option value="intermediate">intermediate</option>
+                  <option value="advanced">advanced</option>
+                  <option value="expert">expert</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="f-sport_preference">Sport preference</label>
+                <select id="f-sport_preference">
+                  <option value="">—</option>
+                  <option value="ski">ski</option>
+                  <option value="snowboard">snowboard</option>
+                  <option value="both">both</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="f-seasons_count">Seasons count</label>
+                <input type="number" id="f-seasons_count" min="0" />
+              </div>
+              <div class="field">
+                <label for="f-onboarding_completed">Onboarding completed</label>
+                <select id="f-onboarding_completed">
+                  <option value="false">No</option>
+                  <option value="true">Yes</option>
+                </select>
+              </div>
+            </div>
+            <p class="security-note">Passwords are never stored or shown here. They are managed by Supabase Auth only.</p>
+          </form>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-danger" id="modal-delete">Delete user</button>
+          <div class="modal-actions-right">
+            <button type="button" class="btn btn-ghost" id="modal-cancel">Cancel</button>
+            <button type="submit" form="form" class="btn btn-primary" id="modal-save">Save</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      (function () {
+        var supabase = window.__SUPABASE_CLIENT__ || null;
+        var listEl = document.getElementById('list');
+        var msgEl = document.getElementById('msg');
+        var searchEl = document.getElementById('search');
+        var modalEl = document.getElementById('modal');
+        var formEl = document.getElementById('form');
+        var allUsers = [];
+        var selectedId = null;
+
+        function showMsg(text, isError) {
+          msgEl.textContent = text;
+          msgEl.className = 'msg ' + (isError ? 'error' : 'success');
+          msgEl.style.display = 'block';
+          setTimeout(function () { msgEl.style.display = 'none'; }, 4000);
+        }
+        function escapeHtml(s) {
+          if (!s) return '';
+          var d = document.createElement('div');
+          d.textContent = s;
+          return d.innerHTML;
+        }
+
+        function filterUsers() {
+          var q = (searchEl.value || '').trim().toLowerCase();
+          if (!q) return allUsers.slice(0, 200);
+          return allUsers.filter(function (u) {
+            return (u.email && u.email.toLowerCase().indexOf(q) !== -1) ||
+              (u.first_name && u.first_name.toLowerCase().indexOf(q) !== -1) ||
+              (u.last_name && u.last_name.toLowerCase().indexOf(q) !== -1) ||
+              (u.username && u.username.toLowerCase().indexOf(q) !== -1);
+          }).slice(0, 200);
+        }
+
+        function renderList() {
+          var filtered = filterUsers();
+          if (filtered.length === 0) {
+            listEl.innerHTML = '<div class="empty">' + (allUsers.length === 0 ? 'No users loaded. Sign in as admin.' : 'No users match your search.') + '</div>';
+            return;
+          }
+          var html = '';
+          filtered.forEach(function (u) {
+            var name = [u.first_name || '', u.last_name || ''].filter(Boolean).join(' ') || u.email;
+            var meta = (u.email || '') + (u.username ? ' @' + u.username : '');
+            html += '<div class="user-row" data-id="' + escapeHtml(u.id) + '">';
+            html += '<span class="name">' + escapeHtml(name) + '</span>';
+            html += '<span class="meta">' + escapeHtml(meta) + '</span>';
+            html += '</div>';
+          });
+          listEl.innerHTML = html;
+          listEl.querySelectorAll('.user-row').forEach(function (row) {
+            row.addEventListener('click', function () { openDetail(row.getAttribute('data-id')); });
+          });
+        }
+
+        function openDetail(id) {
+          var u = allUsers.find(function (x) { return x.id === id; });
+          if (!u) return;
+          selectedId = id;
+          document.getElementById('modal-title').textContent = u.email || 'User details';
+          document.getElementById('f-id').value = u.id || '';
+          document.getElementById('f-email').value = u.email || '';
+          document.getElementById('f-first_name').value = u.first_name || '';
+          document.getElementById('f-last_name').value = u.last_name || '';
+          document.getElementById('f-username').value = u.username || '';
+          document.getElementById('f-avatar_url').value = u.avatar_url || '';
+          document.getElementById('f-units').value = u.units || 'metric';
+          document.getElementById('f-home_resort_id').value = u.home_resort_id || '';
+          document.getElementById('f-country').value = u.country || '';
+          document.getElementById('f-country_code').value = u.country_code || '';
+          document.getElementById('f-ski_experience').value = u.ski_experience || '';
+          document.getElementById('f-sport_preference').value = u.sport_preference || '';
+          document.getElementById('f-seasons_count').value = u.seasons_count != null ? u.seasons_count : '';
+          document.getElementById('f-onboarding_completed').value = u.onboarding_completed ? 'true' : 'false';
+          modalEl.style.display = 'flex';
+        }
+
+        function closeModal() {
+          modalEl.style.display = 'none';
+          selectedId = null;
+        }
+
+        function buildPayload() {
+          var homeResortId = document.getElementById('f-home_resort_id').value.trim() || null;
+          return {
+            email: document.getElementById('f-email').value.trim() || null,
+            first_name: document.getElementById('f-first_name').value.trim() || '',
+            last_name: document.getElementById('f-last_name').value.trim() || null,
+            username: document.getElementById('f-username').value.trim() || null,
+            avatar_url: document.getElementById('f-avatar_url').value.trim() || null,
+            units: document.getElementById('f-units').value || 'metric',
+            home_resort_id: homeResortId,
+            country: document.getElementById('f-country').value.trim() || null,
+            country_code: document.getElementById('f-country_code').value.trim() || null,
+            ski_experience: document.getElementById('f-ski_experience').value || null,
+            sport_preference: document.getElementById('f-sport_preference').value || null,
+            seasons_count: parseInt(document.getElementById('f-seasons_count').value, 10) || null,
+            onboarding_completed: document.getElementById('f-onboarding_completed').value === 'true',
+            updated_at: new Date().toISOString()
+          };
+        }
+
+        function load() {
+          if (!supabase) {
+            listEl.innerHTML = '<div class="empty">Configure Supabase (sign in as admin in the dashboard).</div>';
+            return;
+          }
+          listEl.innerHTML = '<div class="loading">Loading users…</div>';
+          supabase.from('profiles').select('*').order('email').then(function (r) {
+            if (r.error) {
+              listEl.innerHTML = '<div class="msg error">' + escapeHtml(r.error.message) + '</div>';
+              return;
+            }
+            allUsers = r.data || [];
+            renderList();
+          });
+        }
+
+        searchEl.addEventListener('input', function () { renderList(); });
+        document.getElementById('refresh-btn').addEventListener('click', load);
+        document.getElementById('modal-cancel').addEventListener('click', closeModal);
+
+        document.getElementById('modal-delete').addEventListener('click', function () {
+          if (!supabase || !selectedId) return;
+          var email = document.getElementById('f-email').value.trim() || 'this user';
+          var deleteMsg = 'Delete user "' + email + '" permanently? This will remove their auth account, profile, visits, wishlist, photos, and all linked data. Support tickets and resort submissions will be unlinked. This cannot be undone.';
+          if (!confirm(deleteMsg)) return;
+          supabase.functions.invoke('admin-delete-user', { body: { userId: selectedId } }).then(function (res) {
+            if (res.error) {
+              showMsg(res.error.message || (res.data && res.data.details) || 'Delete failed', true);
+              return;
+            }
+            if (res.data && res.data.error) {
+              showMsg(res.data.error + (res.data.details ? ': ' + res.data.details : ''), true);
+              return;
+            }
+            allUsers = allUsers.filter(function (x) { return x.id !== selectedId; });
+            showMsg('User deleted.');
+            closeModal();
+            renderList();
+          });
+        });
+
+        formEl.addEventListener('submit', function (e) {
+          e.preventDefault();
+          if (!supabase || !selectedId) return;
+          var payload = buildPayload();
+          supabase.from('profiles').update(payload).eq('id', selectedId).then(function (res) {
+            if (res.error) {
+              showMsg(res.error.message, true);
+              return;
+            }
+            var idx = allUsers.findIndex(function (x) { return x.id === selectedId; });
+            if (idx !== -1) allUsers[idx] = Object.assign({}, allUsers[idx], payload);
+            showMsg('Profile saved.');
+            closeModal();
+            renderList();
+          });
+        });
+
+        modalEl.addEventListener('click', function (e) {
+          if (e.target === modalEl) closeModal();
+        });
+
+        function runWhenReady() {
+          if (window.__SUPABASE_CLIENT__) {
+            supabase = window.__SUPABASE_CLIENT__;
+            load();
+            return;
+          }
+          var attempts = 0;
+          var t = setInterval(function () {
+            if (window.__SUPABASE_CLIENT__) {
+              clearInterval(t);
+              supabase = window.__SUPABASE_CLIENT__;
+              load();
+            } else if (++attempts >= 100) {
+              clearInterval(t);
+              load();
+            }
+          }, 50);
+        }
+        if (listEl) runWhenReady();
+      })();
+    </script>
+  </body>
+</html>
