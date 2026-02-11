@@ -25,18 +25,24 @@ import { Loader2, Search, Star } from 'lucide-react'
 import { type ColumnDef } from '@tanstack/react-table'
 
 // ---------------------------------------------------------------------------
-// Types
+// Types (matches actual user_visits schema)
 // ---------------------------------------------------------------------------
 
 interface VisitRow {
   id: string
-  resort_id: string
+  resort_id: string | null
   user_id: string
+  entry_type: string | null
+  title: string | null
   start_date: string | null
   end_date: string | null
-  rating: number | null
-  entry_type: string | null
-  created_at: string | null
+  date_precision: string | null
+  notes: string | null
+  rating_terrain: number | null
+  rating_facilities: number | null
+  rating_service: number | null
+  created_at: string
+  pending_resort_name: string | null
   resort_name: string
   resort_country: string
   user_email: string
@@ -45,13 +51,19 @@ interface VisitRow {
 
 interface RawVisit {
   id: string
-  resort_id: string
+  resort_id: string | null
   user_id: string
+  entry_type: string | null
+  title: string | null
   start_date: string | null
   end_date: string | null
-  rating: number | null
-  entry_type: string | null
-  created_at: string | null
+  date_precision: string | null
+  notes: string | null
+  rating_terrain: number | null
+  rating_facilities: number | null
+  rating_service: number | null
+  created_at: string
+  pending_resort_name: string | null
   resorts: { name: string; country: string } | null
 }
 
@@ -66,6 +78,12 @@ interface ProfileRow {
 // Helpers
 // ---------------------------------------------------------------------------
 
+function avgRating(t: number | null, f: number | null, s: number | null): number | null {
+  const vals = [t, f, s].filter((v): v is number => v !== null)
+  if (vals.length === 0) return null
+  return Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) / 10
+}
+
 function ratingBadgeColor(rating: number | null): string {
   if (rating === null) return 'text-slate-400 bg-slate-400/10'
   if (rating >= 4) return 'text-green-400 bg-green-400/10'
@@ -75,12 +93,10 @@ function ratingBadgeColor(rating: number | null): string {
 
 function entryTypeBadge(type: string | null): string {
   switch (type) {
-    case 'manual':
+    case 'day_trip':
       return 'text-blue-400 bg-blue-400/10'
-    case 'import':
+    case 'album':
       return 'text-purple-400 bg-purple-400/10'
-    case 'auto':
-      return 'text-green-400 bg-green-400/10'
     default:
       return 'text-slate-400 bg-slate-400/10'
   }
@@ -93,12 +109,18 @@ function flattenVisit(raw: RawVisit, profilesMap: Map<string, ProfileRow>): Visi
     id: raw.id,
     resort_id: raw.resort_id,
     user_id: raw.user_id,
+    entry_type: raw.entry_type,
+    title: raw.title,
     start_date: raw.start_date,
     end_date: raw.end_date,
-    rating: raw.rating,
-    entry_type: raw.entry_type,
+    date_precision: raw.date_precision,
+    notes: raw.notes,
+    rating_terrain: raw.rating_terrain,
+    rating_facilities: raw.rating_facilities,
+    rating_service: raw.rating_service,
     created_at: raw.created_at,
-    resort_name: raw.resorts?.name ?? 'Unknown Resort',
+    pending_resort_name: raw.pending_resort_name,
+    resort_name: raw.resorts?.name ?? raw.pending_resort_name ?? 'Unknown Resort',
     resort_country: raw.resorts?.country ?? '',
     user_email: profile?.email ?? raw.user_id.slice(0, 8),
     user_name: userName,
@@ -122,7 +144,14 @@ export function VisitsPage() {
 
   // Edit dialog
   const [editVisit, setEditVisit] = useState<VisitRow | null>(null)
-  const [editForm, setEditForm] = useState({ start_date: '', end_date: '', rating: '' })
+  const [editForm, setEditForm] = useState({
+    start_date: '',
+    end_date: '',
+    rating_terrain: '',
+    rating_facilities: '',
+    rating_service: '',
+    notes: '',
+  })
   const [saving, setSaving] = useState(false)
 
   // Delete confirm
@@ -141,15 +170,14 @@ export function VisitsPage() {
         const from = page * PAGE_SIZE
         const to = from + PAGE_SIZE - 1
 
-        // Get count + visit data in parallel
         const [countRes, dataRes] = await Promise.all([
           supabase
             .from('user_visits')
             .select('*', { count: 'exact', head: true }),
           supabase
             .from('user_visits')
-            .select('id, resort_id, user_id, start_date, end_date, rating, entry_type, created_at, resorts(name, country)')
-            .order('start_date', { ascending: false })
+            .select('id, resort_id, user_id, entry_type, title, start_date, end_date, date_precision, notes, rating_terrain, rating_facilities, rating_service, created_at, pending_resort_name, resorts(name, country)')
+            .order('created_at', { ascending: false })
             .range(from, to),
         ])
 
@@ -237,27 +265,34 @@ export function VisitsPage() {
       },
       {
         accessorKey: 'start_date',
-        header: 'Visit Date',
-        cell: ({ row }) => (
-          <span className="text-sm">{formatDate(row.original.start_date)}</span>
-        ),
+        header: 'Date',
+        cell: ({ row }) => {
+          const start = row.original.start_date
+          const end = row.original.end_date
+          if (!start) return <span className="text-xs text-muted-foreground">--</span>
+          if (end && end !== start) {
+            return (
+              <span className="text-sm">
+                {formatDate(start)} — {formatDate(end)}
+              </span>
+            )
+          }
+          return <span className="text-sm">{formatDate(start)}</span>
+        },
       },
       {
-        accessorKey: 'end_date',
-        header: 'End Date',
-        cell: ({ row }) => (
-          <span className="text-sm">{formatDate(row.original.end_date)}</span>
-        ),
-      },
-      {
-        accessorKey: 'rating',
+        id: 'avg_rating',
         header: 'Rating',
         cell: ({ row }) => {
-          const r = row.original.rating
-          return r !== null ? (
-            <Badge variant="outline" className={ratingBadgeColor(r)}>
+          const avg = avgRating(
+            row.original.rating_terrain,
+            row.original.rating_facilities,
+            row.original.rating_service
+          )
+          return avg !== null ? (
+            <Badge variant="outline" className={ratingBadgeColor(avg)}>
               <Star className="w-3 h-3 mr-1 fill-current" />
-              {r}
+              {avg}
             </Badge>
           ) : (
             <span className="text-xs text-muted-foreground">--</span>
@@ -266,12 +301,12 @@ export function VisitsPage() {
       },
       {
         accessorKey: 'entry_type',
-        header: 'Entry Type',
+        header: 'Type',
         cell: ({ row }) => {
           const t = row.original.entry_type
           return t ? (
             <Badge variant="outline" className={entryTypeBadge(t)}>
-              {t}
+              {t === 'day_trip' ? 'Day Trip' : t === 'album' ? 'Album' : t}
             </Badge>
           ) : (
             <span className="text-xs text-muted-foreground">--</span>
@@ -291,7 +326,10 @@ export function VisitsPage() {
     setEditForm({
       start_date: visit.start_date ?? '',
       end_date: visit.end_date ?? '',
-      rating: visit.rating !== null ? String(visit.rating) : '',
+      rating_terrain: visit.rating_terrain !== null ? String(visit.rating_terrain) : '',
+      rating_facilities: visit.rating_facilities !== null ? String(visit.rating_facilities) : '',
+      rating_service: visit.rating_service !== null ? String(visit.rating_service) : '',
+      notes: visit.notes ?? '',
     })
   }
 
@@ -303,15 +341,17 @@ export function VisitsPage() {
       const updates: Record<string, unknown> = {}
       if (editForm.start_date) updates.start_date = editForm.start_date
       if (editForm.end_date) updates.end_date = editForm.end_date
-      if (editForm.rating !== '') updates.rating = parseFloat(editForm.rating)
-      else updates.rating = null
+      updates.rating_terrain = editForm.rating_terrain !== '' ? parseFloat(editForm.rating_terrain) : null
+      updates.rating_facilities = editForm.rating_facilities !== '' ? parseFloat(editForm.rating_facilities) : null
+      updates.rating_service = editForm.rating_service !== '' ? parseFloat(editForm.rating_service) : null
+      updates.notes = editForm.notes || null
 
       const { error } = await supabase.from('user_visits').update(updates).eq('id', editVisit.id)
       if (error) throw error
 
       toast.success('Visit updated')
       await log({
-        action: 'edit_resort',
+        action: 'edit_visit',
         entity_type: 'user_visit',
         entity_id: editVisit.id,
         details: updates,
@@ -339,7 +379,7 @@ export function VisitsPage() {
 
       toast.success('Visit deleted')
       await log({
-        action: 'delete_resort',
+        action: 'delete_visit',
         entity_type: 'user_visit',
         entity_id: deleteTarget.id,
         details: {
@@ -368,10 +408,13 @@ export function VisitsPage() {
         country: v.resort_country,
         user_email: v.user_email,
         user_name: v.user_name,
+        entry_type: v.entry_type ?? '',
         start_date: v.start_date ?? '',
         end_date: v.end_date ?? '',
-        rating: v.rating ?? '',
-        entry_type: v.entry_type ?? '',
+        rating_terrain: v.rating_terrain ?? '',
+        rating_facilities: v.rating_facilities ?? '',
+        rating_service: v.rating_service ?? '',
+        notes: v.notes ?? '',
       })),
     [visits]
   )
@@ -436,46 +479,83 @@ export function VisitsPage() {
           <DialogHeader>
             <DialogTitle>Edit Visit</DialogTitle>
             <DialogDescription>
-              {editVisit?.resort_name} - {editVisit?.user_email}
+              {editVisit?.resort_name} — {editVisit?.user_email}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-2">
-            <div className="space-y-2">
-              <Label>Start Date</Label>
-              <Input
-                type="date"
-                value={editForm.start_date}
-                onChange={(e) => setEditForm((f) => ({ ...f, start_date: e.target.value }))}
-              />
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Start Date</Label>
+                <Input
+                  type="date"
+                  value={editForm.start_date}
+                  onChange={(e) => setEditForm((f) => ({ ...f, start_date: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>End Date</Label>
+                <Input
+                  type="date"
+                  value={editForm.end_date}
+                  onChange={(e) => setEditForm((f) => ({ ...f, end_date: e.target.value }))}
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <Label>Terrain</Label>
+                <Input
+                  type="number"
+                  min="1"
+                  max="5"
+                  step="1"
+                  value={editForm.rating_terrain}
+                  onChange={(e) => setEditForm((f) => ({ ...f, rating_terrain: e.target.value }))}
+                  placeholder="--"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Facilities</Label>
+                <Input
+                  type="number"
+                  min="1"
+                  max="5"
+                  step="1"
+                  value={editForm.rating_facilities}
+                  onChange={(e) => setEditForm((f) => ({ ...f, rating_facilities: e.target.value }))}
+                  placeholder="--"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Service</Label>
+                <Input
+                  type="number"
+                  min="1"
+                  max="5"
+                  step="1"
+                  value={editForm.rating_service}
+                  onChange={(e) => setEditForm((f) => ({ ...f, rating_service: e.target.value }))}
+                  placeholder="--"
+                />
+              </div>
             </div>
 
             <div className="space-y-2">
-              <Label>End Date</Label>
-              <Input
-                type="date"
-                value={editForm.end_date}
-                onChange={(e) => setEditForm((f) => ({ ...f, end_date: e.target.value }))}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label>Rating (1-5)</Label>
-              <Input
-                type="number"
-                min="1"
-                max="5"
-                step="0.5"
-                value={editForm.rating}
-                onChange={(e) => setEditForm((f) => ({ ...f, rating: e.target.value }))}
-                placeholder="No rating"
+              <Label>Notes</Label>
+              <textarea
+                value={editForm.notes}
+                onChange={(e) => setEditForm((f) => ({ ...f, notes: e.target.value }))}
+                placeholder="No notes"
+                className="flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring min-h-[60px]"
               />
             </div>
 
             <div className="grid grid-cols-2 gap-4 pt-2">
               <div>
                 <Label className="text-muted-foreground text-xs">Resort ID</Label>
-                <p className="text-xs font-mono mt-1 truncate">{editVisit?.resort_id}</p>
+                <p className="text-xs font-mono mt-1 truncate">{editVisit?.resort_id ?? 'None'}</p>
               </div>
               <div>
                 <Label className="text-muted-foreground text-xs">User ID</Label>
