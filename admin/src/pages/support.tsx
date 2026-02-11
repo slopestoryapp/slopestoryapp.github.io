@@ -36,7 +36,8 @@ interface SupportTicket {
   message: string
   steps_to_reproduce: string | null
   why_useful: string | null
-  device_info: string | null
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  device_info: any
   resort_name: string | null
   resort_id: string | null
   screen_feature: string | null
@@ -51,7 +52,7 @@ interface SupportNote {
   id: string
   support_request_id: string
   admin_email: string
-  content: string
+  note_text: string
   is_response_to_user: boolean
   created_at: string
 }
@@ -205,7 +206,7 @@ export function SupportPage() {
       const { error } = await supabase.from('support_request_notes').insert({
         support_request_id: selected.id,
         admin_email: email,
-        content: newNote.trim(),
+        note_text: newNote.trim(),
         is_response_to_user: false,
       })
 
@@ -243,7 +244,7 @@ export function SupportPage() {
       const { error } = await supabase.from('support_request_notes').insert({
         support_request_id: selected.id,
         admin_email: email,
-        content: newNote.trim(),
+        note_text: newNote.trim(),
         is_response_to_user: true,
       })
 
@@ -529,7 +530,9 @@ export function SupportPage() {
                           Device Info
                         </span>
                         <p className="text-xs font-mono mt-1">
-                          {selected.device_info}
+                          {typeof selected.device_info === 'object'
+                            ? JSON.stringify(selected.device_info, null, 2)
+                            : String(selected.device_info)}
                         </p>
                       </div>
                     )}
@@ -689,7 +692,7 @@ export function SupportPage() {
                               </span>
                             </div>
                             <p className="text-sm whitespace-pre-wrap">
-                              {note.content}
+                              {note.note_text}
                             </p>
                           </div>
                         ))}
