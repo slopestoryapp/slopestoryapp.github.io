@@ -433,8 +433,8 @@ export function SupportPage() {
                 <h2 className="text-sm font-semibold">Ticket Details</h2>
               </div>
               {selected ? (
-                <ScrollArea className="max-h-[400px]">
-                  <div className="p-4 space-y-4">
+                <div className="flex flex-col">
+                  <div className="overflow-y-auto max-h-[50vh] p-4 space-y-4">
                     <div className="grid grid-cols-2 gap-3 text-sm">
                       <div>
                         <span className="text-muted-foreground">ID</span>
@@ -529,7 +529,7 @@ export function SupportPage() {
                         <span className="text-xs text-muted-foreground">
                           Device Info
                         </span>
-                        <p className="text-xs font-mono mt-1">
+                        <p className="text-xs font-mono mt-1 whitespace-pre-wrap">
                           {typeof selected.device_info === 'object'
                             ? JSON.stringify(selected.device_info, null, 2)
                             : String(selected.device_info)}
@@ -577,73 +577,73 @@ export function SupportPage() {
                         <p className="text-sm mt-1">{selected.issue_type}</p>
                       </div>
                     )}
-
-                    {/* Status Action Buttons */}
-                    <div className="flex flex-wrap gap-2 pt-2 border-t border-border">
-                      {selected.status !== 'in_progress' && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => updateStatus('in_progress')}
-                          disabled={statusLoading}
-                        >
-                          {statusLoading ? (
-                            <Loader2 className="w-4 h-4 mr-1 animate-spin" />
-                          ) : (
-                            <PlayCircle className="w-4 h-4 mr-1" />
-                          )}
-                          In Progress
-                        </Button>
-                      )}
-                      {selected.status !== 'resolved' && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => updateStatus('resolved')}
-                          disabled={statusLoading}
-                        >
-                          {statusLoading ? (
-                            <Loader2 className="w-4 h-4 mr-1 animate-spin" />
-                          ) : (
-                            <CheckCircle2 className="w-4 h-4 mr-1" />
-                          )}
-                          Resolved
-                        </Button>
-                      )}
-                      {selected.status !== 'closed' && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => updateStatus('closed')}
-                          disabled={statusLoading}
-                        >
-                          {statusLoading ? (
-                            <Loader2 className="w-4 h-4 mr-1 animate-spin" />
-                          ) : (
-                            <XCircle className="w-4 h-4 mr-1" />
-                          )}
-                          Close
-                        </Button>
-                      )}
-                      {(selected.status === 'resolved' ||
-                        selected.status === 'closed') && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => updateStatus('pending')}
-                          disabled={statusLoading}
-                        >
-                          {statusLoading ? (
-                            <Loader2 className="w-4 h-4 mr-1 animate-spin" />
-                          ) : (
-                            <RotateCcw className="w-4 h-4 mr-1" />
-                          )}
-                          Reopen
-                        </Button>
-                      )}
-                    </div>
                   </div>
-                </ScrollArea>
+
+                  {/* Status Action Buttons — pinned below scroll */}
+                  <div className="flex flex-wrap gap-2 p-4 border-t border-border">
+                    {selected.status !== 'in_progress' && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => updateStatus('in_progress')}
+                        disabled={statusLoading}
+                      >
+                        {statusLoading ? (
+                          <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                        ) : (
+                          <PlayCircle className="w-4 h-4 mr-1" />
+                        )}
+                        In Progress
+                      </Button>
+                    )}
+                    {selected.status !== 'resolved' && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => updateStatus('resolved')}
+                        disabled={statusLoading}
+                      >
+                        {statusLoading ? (
+                          <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                        ) : (
+                          <CheckCircle2 className="w-4 h-4 mr-1" />
+                        )}
+                        Resolved
+                      </Button>
+                    )}
+                    {selected.status !== 'closed' && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => updateStatus('closed')}
+                        disabled={statusLoading}
+                      >
+                        {statusLoading ? (
+                          <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                        ) : (
+                          <XCircle className="w-4 h-4 mr-1" />
+                        )}
+                        Close
+                      </Button>
+                    )}
+                    {(selected.status === 'resolved' ||
+                      selected.status === 'closed') && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => updateStatus('pending')}
+                        disabled={statusLoading}
+                      >
+                        {statusLoading ? (
+                          <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                        ) : (
+                          <RotateCcw className="w-4 h-4 mr-1" />
+                        )}
+                        Reopen
+                      </Button>
+                    )}
+                  </div>
+                </div>
               ) : (
                 <div className="p-8 text-center text-sm text-muted-foreground">
                   Select a ticket to view details
