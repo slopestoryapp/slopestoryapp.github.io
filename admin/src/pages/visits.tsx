@@ -53,7 +53,13 @@ interface RawVisit {
   entry_type: string | null
   created_at: string | null
   resorts: { name: string; country: string } | null
-  profiles: { email: string | null; first_name: string | null; last_name: string | null } | null
+}
+
+interface ProfileRow {
+  id: string
+  email: string | null
+  first_name: string | null
+  last_name: string | null
 }
 
 // ---------------------------------------------------------------------------
@@ -80,8 +86,8 @@ function entryTypeBadge(type: string | null): string {
   }
 }
 
-function flattenVisit(raw: RawVisit): VisitRow {
-  const profile = raw.profiles
+function flattenVisit(raw: RawVisit, profilesMap: Map<string, ProfileRow>): VisitRow {
+  const profile = profilesMap.get(raw.user_id)
   const userName = [profile?.first_name, profile?.last_name].filter(Boolean).join(' ') || ''
   return {
     id: raw.id,
@@ -94,7 +100,7 @@ function flattenVisit(raw: RawVisit): VisitRow {
     created_at: raw.created_at,
     resort_name: raw.resorts?.name ?? 'Unknown Resort',
     resort_country: raw.resorts?.country ?? '',
-    user_email: profile?.email ?? 'Unknown',
+    user_email: profile?.email ?? raw.user_id.slice(0, 8),
     user_name: userName,
   }
 }
@@ -135,22 +141,40 @@ export function VisitsPage() {
         const from = page * PAGE_SIZE
         const to = from + PAGE_SIZE - 1
 
-        // Get count
-        const { count, error: countError } = await supabase
-          .from('user_visits')
-          .select('*', { count: 'exact', head: true })
-        if (countError) throw countError
-        setTotalCount(count ?? 0)
+        // Get count + visit data in parallel
+        const [countRes, dataRes] = await Promise.all([
+          supabase
+            .from('user_visits')
+            .select('*', { count: 'exact', head: true }),
+          supabase
+            .from('user_visits')
+            .select('id, resort_id, user_id, start_date, end_date, rating, entry_type, created_at, resorts(name, country)')
+            .order('start_date', { ascending: false })
+            .range(from, to),
+        ])
 
-        // Get data
-        const { data, error } = await supabase
-          .from('user_visits')
-          .select('id, resort_id, user_id, start_date, end_date, rating, entry_type, created_at, resorts(name, country), profiles(email, first_name, last_name)')
-          .order('start_date', { ascending: false })
-          .range(from, to)
+        if (countRes.error) throw countRes.error
+        if (dataRes.error) throw dataRes.error
+        setTotalCount(countRes.count ?? 0)
 
-        if (error) throw error
-        setVisits((data as unknown as RawVisit[])?.map(flattenVisit) ?? [])
+        const rawVisits = (dataRes.data ?? []) as unknown as RawVisit[]
+
+        // Fetch profiles for the user_ids on this page
+        const userIds = [...new Set(rawVisits.map((v) => v.user_id))]
+        const profilesMap = new Map<string, ProfileRow>()
+
+        if (userIds.length > 0) {
+          const { data: profiles } = await supabase
+            .from('profiles')
+            .select('id, email, first_name, last_name')
+            .in('id', userIds)
+
+          for (const p of (profiles ?? []) as ProfileRow[]) {
+            profilesMap.set(p.id, p)
+          }
+        }
+
+        setVisits(rawVisits.map((v) => flattenVisit(v, profilesMap)))
       } catch (err) {
         console.error(err)
         toast.error('Failed to load visits')
