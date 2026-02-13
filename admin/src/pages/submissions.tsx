@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { SUPABASE_URL } from '@/lib/constants'
-import { formatDate, cn } from '@/lib/utils'
+import { formatDate, timeAgo, cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import { useAuditLog } from '@/hooks/use-audit-log'
 import { Header } from '@/components/layout/header'
@@ -21,55 +21,153 @@ import {
   Loader2,
   ImageIcon,
   Plus,
-  ExternalLink,
+  Trash2,
+  Search,
+  Users,
+  Link2,
+  Mountain,
 } from 'lucide-react'
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+interface PotentialMatch {
+  id: string
+  name: string
+  country_code: string
+  similarity: number
+}
+
+interface DuplicateSubmission {
+  id: string
+  resort_name: string
+  country: string
+  submitted_by: string | null
+  similarity: number
+}
 
 interface Submission {
   id: string
   resort_name: string
   country: string
   region: string | null
+  website: string | null
   notes: string | null
   submitted_by: string | null
   submitter_email: string | null
   photo_url: string | null
   status: string
+  status_display: string
   submitted_at: string
+  approved_resort_id: string | null
+  potential_matches: PotentialMatch[] | null
+  duplicate_submissions: DuplicateSubmission[] | null
 }
+
+interface LinkedVisit {
+  id: string
+  user_id: string
+  pending_resort_name: string | null
+  start_date: string | null
+  entry_type: string
+  created_at: string
+}
+
+interface VisitProfile {
+  id: string
+  first_name: string | null
+  email: string | null
+  avatar_url: string | null
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+async function callEdgeFunction(
+  functionName: string,
+  body: Record<string, unknown>,
+) {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession()
+  if (!session) throw new Error('Not authenticated')
+
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/${functionName}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${session.access_token}`,
+    },
+    body: JSON.stringify(body),
+  })
+
+  const data = await res.json()
+  if (!res.ok) throw new Error(data.error ?? 'Request failed')
+  return data
+}
+
+function similarityBadge(score: number) {
+  if (score >= 0.8) return { label: 'High', className: 'bg-green-500/15 text-green-400' }
+  if (score >= 0.5) return { label: 'Medium', className: 'bg-yellow-500/15 text-yellow-400' }
+  return { label: 'Low', className: 'bg-slate-500/15 text-slate-400' }
+}
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
 
 export function SubmissionsPage() {
   const { log } = useAuditLog()
 
+  // Data
   const [submissions, setSubmissions] = useState<Submission[]>([])
   const [selected, setSelected] = useState<Submission | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+
+  // Detail panel extras
+  const [linkedVisits, setLinkedVisits] = useState<LinkedVisit[]>([])
+  const [visitProfiles, setVisitProfiles] = useState<VisitProfile[]>([])
+  const [detailLoading, setDetailLoading] = useState(false)
 
   // Stats
   const [pendingCount, setPendingCount] = useState(0)
   const [approvedCount, setApprovedCount] = useState(0)
   const [totalResorts, setTotalResorts] = useState(0)
 
-  // Confirm dialogs
-  const [confirmAction, setConfirmAction] = useState<'approve' | 'reject' | null>(null)
+  // Status filter
+  const [statusFilter, setStatusFilter] = useState<'pending' | 'approved' | 'rejected'>('pending')
 
-  // Process image form
+  // Confirm dialogs
+  const [confirmAction, setConfirmAction] = useState<'approve' | 'soft_reject' | 'hard_delete' | null>(null)
+  const [actionLoading, setActionLoading] = useState(false)
+
+  // Approve: resort picker
+  const [resortSearchQuery, setResortSearchQuery] = useState('')
+  const [resortSearchResults, setResortSearchResults] = useState<{ id: string; name: string; country_code: string }[]>([])
+  const [resortSearching, setResortSearching] = useState(false)
+  const [selectedResortId, setSelectedResortId] = useState<string | null>(null)
+
+  // Process image form (existing workflow)
   const [processImageUrl, setProcessImageUrl] = useState('')
   const [processResortName, setProcessResortName] = useState('')
   const [processLoading, setProcessLoading] = useState(false)
 
-  // Create resort
+  // Create resort (existing workflow)
   const [createResortJson, setCreateResortJson] = useState('')
   const [createLoading, setCreateLoading] = useState(false)
 
+  // ---------------------------------------------------------------------------
+  // Data loading
+  // ---------------------------------------------------------------------------
+
   const loadSubmissions = useCallback(async () => {
     try {
-      const [subsRes, pendingRes, approvedRes, resortsRes] = await Promise.all([
-        supabase
-          .from('resort_submissions')
-          .select('*')
-          .eq('status', 'pending')
-          .order('submitted_at', { ascending: false }),
+      // Use the new edge function for enriched data (pg_trgm matches)
+      const [listRes, pendingRes, approvedRes, resortsRes] = await Promise.all([
+        callEdgeFunction('admin-list-submissions', { action: 'list', status: statusFilter }),
         supabase
           .from('resort_submissions')
           .select('*', { count: 'exact', head: true })
@@ -83,19 +181,20 @@ export function SubmissionsPage() {
           .select('*', { count: 'exact', head: true }),
       ])
 
-      setSubmissions((subsRes.data as Submission[]) ?? [])
+      setSubmissions(listRes.submissions ?? [])
       setPendingCount(pendingRes.count ?? 0)
       setApprovedCount(approvedRes.count ?? 0)
       setTotalResorts(resortsRes.count ?? 0)
-    } catch {
-      toast.error('Failed to load submissions')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to load submissions')
     } finally {
       setLoading(false)
       setRefreshing(false)
     }
-  }, [])
+  }, [statusFilter])
 
   useEffect(() => {
+    setLoading(true)
     loadSubmissions()
   }, [loadSubmissions])
 
@@ -104,55 +203,137 @@ export function SubmissionsPage() {
     loadSubmissions()
   }, [loadSubmissions])
 
+  // Load detail (linked visits) when selecting a submission
+  const loadDetail = useCallback(async (sub: Submission) => {
+    setDetailLoading(true)
+    try {
+      const res = await callEdgeFunction('admin-list-submissions', {
+        action: 'detail',
+        submissionId: sub.id,
+      })
+      setLinkedVisits(res.visits ?? [])
+      setVisitProfiles(res.profiles ?? [])
+    } catch {
+      // Non-critical — detail just won't show visits
+      setLinkedVisits([])
+      setVisitProfiles([])
+    } finally {
+      setDetailLoading(false)
+    }
+  }, [])
+
+  const handleSelect = useCallback(
+    (sub: Submission) => {
+      setSelected(sub)
+      setProcessImageUrl(sub.photo_url ?? '')
+      setProcessResortName(sub.resort_name)
+      setSelectedResortId(null)
+      setResortSearchQuery('')
+      setResortSearchResults([])
+      loadDetail(sub)
+    },
+    [loadDetail],
+  )
+
+  // ---------------------------------------------------------------------------
+  // Resort search for approve action
+  // ---------------------------------------------------------------------------
+
+  const searchResorts = useCallback(async (query: string) => {
+    if (!query.trim()) {
+      setResortSearchResults([])
+      return
+    }
+    setResortSearching(true)
+    try {
+      const { data, error } = await supabase
+        .from('resorts')
+        .select('id, name, country_code')
+        .ilike('name', `%${query}%`)
+        .limit(10)
+
+      if (!error) setResortSearchResults(data ?? [])
+    } finally {
+      setResortSearching(false)
+    }
+  }, [])
+
+  // Debounced resort search
+  useEffect(() => {
+    const timer = setTimeout(() => searchResorts(resortSearchQuery), 300)
+    return () => clearTimeout(timer)
+  }, [resortSearchQuery, searchResorts])
+
+  // ---------------------------------------------------------------------------
+  // Actions via edge function
+  // ---------------------------------------------------------------------------
+
   const handleApprove = useCallback(async () => {
     if (!selected) return
-    const { error } = await supabase
-      .from('resort_submissions')
-      .update({ status: 'approved' })
-      .eq('id', selected.id)
-
-    if (error) {
-      toast.error('Failed to approve submission')
+    const resortId = selectedResortId
+    if (!resortId) {
+      toast.error('Pick a resort to link this submission to')
       return
     }
+    setActionLoading(true)
+    try {
+      await callEdgeFunction('admin-manage-submission', {
+        action: 'approve',
+        submissionId: selected.id,
+        resortId,
+      })
+      toast.success(`Approved: ${selected.resort_name} — cascading to duplicates`)
+      setSelected(null)
+      setConfirmAction(null)
+      loadSubmissions()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to approve')
+    } finally {
+      setActionLoading(false)
+    }
+  }, [selected, selectedResortId, loadSubmissions])
 
-    await log({
-      action: 'approve_submission',
-      entity_type: 'resort_submission',
-      entity_id: selected.id,
-      details: { resort_name: selected.resort_name },
-    })
-
-    toast.success(`Approved: ${selected.resort_name}`)
-    setSelected(null)
-    setConfirmAction(null)
-    loadSubmissions()
-  }, [selected, log, loadSubmissions])
-
-  const handleReject = useCallback(async () => {
+  const handleSoftReject = useCallback(async () => {
     if (!selected) return
-    const { error } = await supabase
-      .from('resort_submissions')
-      .update({ status: 'rejected' })
-      .eq('id', selected.id)
-
-    if (error) {
-      toast.error('Failed to reject submission')
-      return
+    setActionLoading(true)
+    try {
+      await callEdgeFunction('admin-manage-submission', {
+        action: 'soft_reject',
+        submissionId: selected.id,
+      })
+      toast.success(`Soft rejected: ${selected.resort_name} — visits preserved, user notified`)
+      setSelected(null)
+      setConfirmAction(null)
+      loadSubmissions()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to reject')
+    } finally {
+      setActionLoading(false)
     }
+  }, [selected, loadSubmissions])
 
-    await log({
-      action: 'reject_submission',
-      entity_type: 'resort_submission',
-      entity_id: selected.id,
-      details: { resort_name: selected.resort_name },
-    })
+  const handleHardDelete = useCallback(async () => {
+    if (!selected) return
+    setActionLoading(true)
+    try {
+      await callEdgeFunction('admin-manage-submission', {
+        action: 'hard_delete',
+        submissionId: selected.id,
+      })
+      toast.success(`Deleted: ${selected.resort_name} — submission + visits + photos removed`)
+      setSelected(null)
+      setConfirmAction(null)
+      loadSubmissions()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to delete')
+    } finally {
+      setActionLoading(false)
+    }
+  }, [selected, loadSubmissions])
 
-    toast.success(`Rejected: ${selected.resort_name}`)
-    setSelected(null)
-    setConfirmAction(null)
-    loadSubmissions()
-  }, [selected, log, loadSubmissions])
+  // ---------------------------------------------------------------------------
+  // Existing workflows: research prompt, process image, create resort
+  // ---------------------------------------------------------------------------
 
   const generateResearchPrompt = useCallback(() => {
     if (!selected) return ''
@@ -218,7 +399,7 @@ Notes from submitter: ${selected.notes ?? 'None'}`
             photo_url: processImageUrl || selected.photo_url,
             resort_name: processResortName || selected.resort_name,
           }),
-        }
+        },
       )
 
       if (!response.ok) {
@@ -228,9 +409,7 @@ Notes from submitter: ${selected.notes ?? 'None'}`
 
       toast.success('Image processed successfully')
     } catch (err) {
-      toast.error(
-        err instanceof Error ? err.message : 'Failed to process image'
-      )
+      toast.error(err instanceof Error ? err.message : 'Failed to process image')
     } finally {
       setProcessLoading(false)
     }
@@ -245,7 +424,11 @@ Notes from submitter: ${selected.notes ?? 'None'}`
     setCreateLoading(true)
     try {
       const parsedData = JSON.parse(createResortJson)
-      const { error } = await supabase.from('resorts').insert(parsedData)
+      const { data: insertedResort, error } = await supabase
+        .from('resorts')
+        .insert(parsedData)
+        .select('id')
+        .single()
 
       if (error) {
         toast.error(`Failed to create resort: ${error.message}`)
@@ -260,23 +443,19 @@ Notes from submitter: ${selected.notes ?? 'None'}`
 
       toast.success(`Resort "${parsedData.name}" created successfully`)
 
-      // Offer to auto-approve the submission
-      if (selected) {
-        const { error: approveErr } = await supabase
-          .from('resort_submissions')
-          .update({ status: 'approved' })
-          .eq('id', selected.id)
-
-        if (!approveErr) {
-          await log({
-            action: 'auto_approve_submission',
-            entity_type: 'resort_submission',
-            entity_id: selected.id,
-            details: { resort_name: selected.resort_name },
+      // Auto-approve the submission linked to the new resort
+      if (selected && insertedResort?.id) {
+        try {
+          await callEdgeFunction('admin-manage-submission', {
+            action: 'approve',
+            submissionId: selected.id,
+            resortId: insertedResort.id,
           })
-          toast.success('Submission auto-approved')
+          toast.success('Submission auto-approved & linked to new resort')
           setSelected(null)
           loadSubmissions()
+        } catch {
+          toast.error('Resort created but failed to auto-approve submission')
         }
       }
 
@@ -288,11 +467,20 @@ Notes from submitter: ${selected.notes ?? 'None'}`
     }
   }, [createResortJson, selected, log, loadSubmissions])
 
+  // ---------------------------------------------------------------------------
+  // Render helpers
+  // ---------------------------------------------------------------------------
+
+  const profileMap = new Map(visitProfiles.map((p) => [p.id, p]))
+
+  const potentialMatches = selected?.potential_matches ?? []
+  const duplicates = selected?.duplicate_submissions ?? []
+
   return (
     <div className="flex flex-col h-full">
       <Header
         title="Submissions"
-        subtitle="Review and process resort submissions"
+        subtitle="Review, approve, or reject resort submissions"
         onRefresh={handleRefresh}
         refreshing={refreshing}
       />
@@ -305,17 +493,45 @@ Notes from submitter: ${selected.notes ?? 'None'}`
           <StatsCard label="Total Resorts" value={totalResorts} />
         </div>
 
+        {/* Status filter tabs */}
+        <div className="flex gap-2">
+          {(['pending', 'approved', 'rejected'] as const).map((s) => (
+            <button
+              key={s}
+              onClick={() => {
+                setStatusFilter(s)
+                setSelected(null)
+              }}
+              className={cn(
+                'px-3 py-1.5 text-xs font-medium rounded-full border transition-colors',
+                statusFilter === s
+                  ? 'bg-primary/10 text-primary border-primary/30'
+                  : 'text-muted-foreground border-border hover:border-primary/20',
+              )}
+            >
+              {s.charAt(0).toUpperCase() + s.slice(1)}
+              {s === 'pending' && pendingCount > 0 && (
+                <span className="ml-1.5 bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">
+                  {pendingCount}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+
         {/* Main content: list + details */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Left: Pending Submissions List */}
+          {/* Left: Submissions List */}
           <div className="bg-card border border-border rounded-xl">
             <div className="p-4 border-b border-border">
-              <h2 className="text-sm font-semibold">Pending Submissions</h2>
+              <h2 className="text-sm font-semibold">
+                {statusFilter.charAt(0).toUpperCase() + statusFilter.slice(1)} Submissions
+              </h2>
               <p className="text-xs text-muted-foreground mt-0.5">
-                {pendingCount} submissions awaiting review
+                {submissions.length} submissions · oldest first
               </p>
             </div>
-            <ScrollArea className="max-h-[500px]">
+            <ScrollArea className="max-h-[600px]">
               {loading ? (
                 <div className="p-4 space-y-3">
                   {Array.from({ length: 5 }).map((_, i) => (
@@ -324,29 +540,47 @@ Notes from submitter: ${selected.notes ?? 'None'}`
                 </div>
               ) : submissions.length === 0 ? (
                 <div className="p-8 text-center text-sm text-muted-foreground">
-                  No pending submissions
+                  No {statusFilter} submissions
                 </div>
               ) : (
                 <div className="divide-y divide-border">
-                  {submissions.map((sub) => (
-                    <button
-                      key={sub.id}
-                      onClick={() => {
-                        setSelected(sub)
-                        setProcessImageUrl(sub.photo_url ?? '')
-                        setProcessResortName(sub.resort_name)
-                      }}
-                      className={cn(
-                        'w-full text-left px-4 py-3 hover:bg-accent/50 transition-colors',
-                        selected?.id === sub.id && 'bg-accent'
-                      )}
-                    >
-                      <div className="text-sm font-medium">{sub.resort_name}</div>
-                      <div className="text-xs text-muted-foreground mt-0.5">
-                        {sub.country} &middot; {formatDate(sub.submitted_at)}
-                      </div>
-                    </button>
-                  ))}
+                  {submissions.map((sub) => {
+                    const hasDupes = (sub.duplicate_submissions?.length ?? 0) > 0
+                    const hasMatches = (sub.potential_matches?.length ?? 0) > 0
+                    return (
+                      <button
+                        key={sub.id}
+                        onClick={() => handleSelect(sub)}
+                        className={cn(
+                          'w-full text-left px-4 py-3 hover:bg-accent/50 transition-colors',
+                          selected?.id === sub.id && 'bg-accent',
+                        )}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="text-sm font-medium">{sub.resort_name}</div>
+                          <div className="flex gap-1">
+                            {hasDupes && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-orange-500/15 text-orange-400">
+                                {sub.duplicate_submissions!.length} dupes
+                              </span>
+                            )}
+                            {hasMatches && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400">
+                                {sub.potential_matches!.length} match{sub.potential_matches!.length !== 1 ? 'es' : ''}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-0.5">
+                          {sub.country}
+                          {sub.region ? ` · ${sub.region}` : ''}
+                          {' · '}
+                          {timeAgo(sub.submitted_at)}
+                          {sub.submitter_email ? ` · ${sub.submitter_email}` : ''}
+                        </div>
+                      </button>
+                    )
+                  })}
                 </div>
               )}
             </ScrollArea>
@@ -358,70 +592,244 @@ Notes from submitter: ${selected.notes ?? 'None'}`
               <h2 className="text-sm font-semibold">Submission Details</h2>
             </div>
             {selected ? (
-              <div className="p-4 space-y-4">
-                <div className="grid grid-cols-2 gap-3 text-sm">
-                  <div>
-                    <span className="text-muted-foreground">Resort Name</span>
-                    <p className="font-medium">{selected.resort_name}</p>
+              <ScrollArea className="max-h-[600px]">
+                <div className="p-4 space-y-4">
+                  {/* Basic info */}
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <span className="text-muted-foreground">Resort Name</span>
+                      <p className="font-medium">{selected.resort_name}</p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Country</span>
+                      <p className="font-medium">{selected.country}</p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Region</span>
+                      <p className="font-medium">{selected.region ?? 'N/A'}</p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Status</span>
+                      <p>
+                        <Badge variant="secondary">{selected.status_display ?? selected.status}</Badge>
+                      </p>
+                    </div>
+                    {selected.website && (
+                      <div className="col-span-2">
+                        <span className="text-muted-foreground">Website</span>
+                        <p className="font-medium text-primary truncate">{selected.website}</p>
+                      </div>
+                    )}
+                    <div className="col-span-2">
+                      <span className="text-muted-foreground">Notes</span>
+                      <p className="font-medium">{selected.notes ?? 'None'}</p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Submitted</span>
+                      <p className="font-medium">{formatDate(selected.submitted_at)}</p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Email</span>
+                      <p className="font-medium">{selected.submitter_email ?? 'N/A'}</p>
+                    </div>
                   </div>
-                  <div>
-                    <span className="text-muted-foreground">Country</span>
-                    <p className="font-medium">{selected.country}</p>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Region</span>
-                    <p className="font-medium">{selected.region ?? 'N/A'}</p>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Status</span>
-                    <p>
-                      <Badge variant="secondary">{selected.status}</Badge>
-                    </p>
-                  </div>
-                  <div className="col-span-2">
-                    <span className="text-muted-foreground">Notes</span>
-                    <p className="font-medium">{selected.notes ?? 'None'}</p>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Submitted By</span>
-                    <p className="font-medium">{selected.submitted_by ?? 'Unknown'}</p>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Email</span>
-                    <p className="font-medium">{selected.submitter_email ?? 'N/A'}</p>
-                  </div>
-                </div>
 
-                {selected.photo_url && (
-                  <div>
-                    <span className="text-xs text-muted-foreground">Submitted Photo</span>
-                    <img
-                      src={selected.photo_url}
-                      alt={selected.resort_name}
-                      className="mt-1 rounded-lg max-h-48 w-full object-cover"
-                    />
-                  </div>
-                )}
+                  {selected.photo_url && (
+                    <div>
+                      <span className="text-xs text-muted-foreground">Submitted Photo</span>
+                      <img
+                        src={selected.photo_url}
+                        alt={selected.resort_name}
+                        className="mt-1 rounded-lg max-h-48 w-full object-cover"
+                      />
+                    </div>
+                  )}
 
-                {/* Action Buttons */}
-                <div className="flex gap-2 pt-2">
-                  <Button
-                    onClick={() => setConfirmAction('approve')}
-                    className="flex-1"
-                  >
-                    <Check className="w-4 h-4 mr-1" />
-                    Approve
-                  </Button>
-                  <Button
-                    variant="destructive"
-                    onClick={() => setConfirmAction('reject')}
-                    className="flex-1"
-                  >
-                    <X className="w-4 h-4 mr-1" />
-                    Reject
-                  </Button>
+                  {/* Potential Resort Matches (pg_trgm) */}
+                  {potentialMatches.length > 0 && (
+                    <div className="border border-blue-500/20 rounded-lg p-3">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Mountain className="w-4 h-4 text-blue-400" />
+                        <span className="text-xs font-semibold text-blue-400">
+                          Potential Resort Matches
+                        </span>
+                      </div>
+                      <div className="space-y-1.5">
+                        {potentialMatches.map((m) => {
+                          const sim = similarityBadge(m.similarity)
+                          return (
+                            <button
+                              key={m.id}
+                              onClick={() => setSelectedResortId(m.id)}
+                              className={cn(
+                                'w-full flex items-center justify-between text-left px-2.5 py-2 rounded-md text-sm transition-colors',
+                                selectedResortId === m.id
+                                  ? 'bg-primary/10 ring-1 ring-primary/30'
+                                  : 'hover:bg-accent/50',
+                              )}
+                            >
+                              <div>
+                                <span className="font-medium">{m.name}</span>
+                                <span className="text-muted-foreground ml-1.5">{m.country_code}</span>
+                              </div>
+                              <span className={cn('text-[10px] px-1.5 py-0.5 rounded', sim.className)}>
+                                {Math.round(m.similarity * 100)}% {sim.label}
+                              </span>
+                            </button>
+                          )
+                        })}
+                      </div>
+                      {selectedResortId && potentialMatches.some((m) => m.id === selectedResortId) && (
+                        <p className="text-xs text-green-400 mt-2">
+                          <Check className="w-3 h-3 inline mr-1" />
+                          Selected for approval — click Approve to link
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Duplicate Submissions */}
+                  {duplicates.length > 0 && (
+                    <div className="border border-orange-500/20 rounded-lg p-3">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Link2 className="w-4 h-4 text-orange-400" />
+                        <span className="text-xs font-semibold text-orange-400">
+                          Duplicate Submissions ({duplicates.length})
+                        </span>
+                      </div>
+                      <div className="space-y-1 text-sm">
+                        {duplicates.map((d) => (
+                          <div
+                            key={d.id}
+                            className="flex items-center justify-between px-2.5 py-1.5 rounded-md hover:bg-accent/50"
+                          >
+                            <span>{d.resort_name} · {d.country}</span>
+                            <span className="text-[10px] text-muted-foreground">
+                              {Math.round(d.similarity * 100)}%
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-2">
+                        Approving this submission will auto-approve exact-match duplicates.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Linked Visits */}
+                  {detailLoading ? (
+                    <Skeleton className="h-12 rounded-lg" />
+                  ) : linkedVisits.length > 0 ? (
+                    <div className="border border-border rounded-lg p-3">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Users className="w-4 h-4 text-muted-foreground" />
+                        <span className="text-xs font-semibold text-muted-foreground">
+                          Linked Visits ({linkedVisits.length})
+                        </span>
+                      </div>
+                      <div className="space-y-1 text-sm">
+                        {linkedVisits.map((v) => {
+                          const profile = profileMap.get(v.user_id)
+                          return (
+                            <div key={v.id} className="flex items-center justify-between px-2.5 py-1.5">
+                              <span>
+                                {profile?.first_name ?? profile?.email ?? v.user_id.slice(0, 8)}
+                              </span>
+                              <span className="text-xs text-muted-foreground">
+                                {v.start_date ? formatDate(v.start_date) : 'No date'}
+                              </span>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {/* Action Buttons */}
+                  {selected.status === 'pending' && (
+                    <div className="space-y-3 pt-2">
+                      {/* Resort search for approve (when no potential match available) */}
+                      {potentialMatches.length === 0 && (
+                        <div>
+                          <Label className="text-xs">Search resort to approve to</Label>
+                          <div className="relative mt-1">
+                            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                            <Input
+                              value={resortSearchQuery}
+                              onChange={(e) => setResortSearchQuery(e.target.value)}
+                              placeholder="Search existing resorts..."
+                              className="pl-9"
+                            />
+                          </div>
+                          {resortSearching && (
+                            <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                              Searching...
+                            </div>
+                          )}
+                          {resortSearchResults.length > 0 && (
+                            <div className="mt-1 border border-border rounded-md divide-y divide-border max-h-40 overflow-auto">
+                              {resortSearchResults.map((r) => (
+                                <button
+                                  key={r.id}
+                                  onClick={() => {
+                                    setSelectedResortId(r.id)
+                                    setResortSearchQuery(r.name)
+                                    setResortSearchResults([])
+                                  }}
+                                  className={cn(
+                                    'w-full text-left px-3 py-2 text-sm hover:bg-accent/50',
+                                    selectedResortId === r.id && 'bg-primary/10',
+                                  )}
+                                >
+                                  {r.name} <span className="text-muted-foreground">{r.country_code}</span>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                          {selectedResortId && (
+                            <p className="text-xs text-green-400 mt-1">
+                              <Check className="w-3 h-3 inline mr-1" />
+                              Resort selected — click Approve to link
+                            </p>
+                          )}
+                        </div>
+                      )}
+
+                      <div className="flex gap-2">
+                        <Button
+                          onClick={() => setConfirmAction('approve')}
+                          className="flex-1"
+                          disabled={!selectedResortId}
+                        >
+                          <Check className="w-4 h-4 mr-1" />
+                          Approve
+                        </Button>
+                        <Button
+                          variant="outline"
+                          onClick={() => setConfirmAction('soft_reject')}
+                          className="flex-1"
+                        >
+                          <X className="w-4 h-4 mr-1" />
+                          Soft Reject
+                        </Button>
+                        <Button
+                          variant="destructive"
+                          onClick={() => setConfirmAction('hard_delete')}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+
+                      <div className="text-[11px] text-muted-foreground space-y-0.5">
+                        <p><strong>Approve:</strong> Links to resort, backfills visits, cascades to duplicates, notifies user.</p>
+                        <p><strong>Soft Reject:</strong> Preserves visits (user can reassign), sends push notification.</p>
+                        <p><strong>Hard Delete:</strong> Permanently removes submission + visits + photos. For spam/test data only.</p>
+                      </div>
+                    </div>
+                  )}
                 </div>
-              </div>
+              </ScrollArea>
             ) : (
               <div className="p-8 text-center text-sm text-muted-foreground">
                 Select a submission to view details
@@ -430,8 +838,8 @@ Notes from submitter: ${selected.notes ?? 'None'}`
           </div>
         </div>
 
-        {/* Bottom: Processing Section */}
-        {selected && (
+        {/* Bottom: Processing Section (existing workflow) */}
+        {selected && selected.status === 'pending' && (
           <div className="bg-card border border-border rounded-xl p-4">
             <Tabs defaultValue="workflow">
               <TabsList>
@@ -445,12 +853,17 @@ Notes from submitter: ${selected.notes ?? 'None'}`
                 <div className="space-y-3 text-sm">
                   <h3 className="font-semibold">Submission Review Workflow</h3>
                   <ol className="list-decimal list-inside space-y-2 text-muted-foreground">
-                    <li>Review the submission details and photo above.</li>
-                    <li>Copy the Research Prompt and paste into Claude to get resort data.</li>
+                    <li>
+                      <strong className="text-foreground">Check matches:</strong> Review the potential resort matches above. If a match exists, select it and click Approve.
+                    </li>
+                    <li>
+                      <strong className="text-foreground">New resort?</strong> Copy the Research Prompt, paste into Claude to get resort data.
+                    </li>
                     <li>If the resort has a photo, use Process Image to generate a cover image.</li>
-                    <li>Paste Claude's JSON output into the Create Resort tab and create the resort.</li>
-                    <li>The submission will be auto-approved once the resort is created.</li>
-                    <li>If the submission is invalid, click Reject with a reason.</li>
+                    <li>Paste Claude's JSON into Create Resort. The submission auto-approves and cascades to duplicates.</li>
+                    <li>
+                      <strong className="text-foreground">Invalid?</strong> Soft Reject (preserves user visits) or Hard Delete (removes everything).
+                    </li>
                   </ol>
                 </div>
               </TabsContent>
@@ -491,10 +904,7 @@ Notes from submitter: ${selected.notes ?? 'None'}`
                       className="mt-1"
                     />
                   </div>
-                  <Button
-                    onClick={handleProcessImage}
-                    disabled={processLoading}
-                  >
+                  <Button onClick={handleProcessImage} disabled={processLoading}>
                     {processLoading ? (
                       <Loader2 className="w-4 h-4 mr-1 animate-spin" />
                     ) : (
@@ -525,7 +935,7 @@ Notes from submitter: ${selected.notes ?? 'None'}`
                     ) : (
                       <Plus className="w-4 h-4 mr-1" />
                     )}
-                    Create Resort
+                    Create Resort & Auto-Approve
                   </Button>
                 </div>
               </TabsContent>
@@ -539,18 +949,27 @@ Notes from submitter: ${selected.notes ?? 'None'}`
         open={confirmAction === 'approve'}
         onOpenChange={(open) => !open && setConfirmAction(null)}
         title="Approve Submission"
-        description={`Are you sure you want to approve "${selected?.resort_name}"?`}
-        confirmLabel="Approve"
+        description={`Approve "${selected?.resort_name}" and link to the selected resort? This will backfill all linked visits and cascade-approve any duplicate submissions.`}
+        confirmLabel={actionLoading ? 'Approving...' : 'Approve'}
         onConfirm={handleApprove}
       />
       <ConfirmDialog
-        open={confirmAction === 'reject'}
+        open={confirmAction === 'soft_reject'}
         onOpenChange={(open) => !open && setConfirmAction(null)}
-        title="Reject Submission"
-        description={`Are you sure you want to reject "${selected?.resort_name}"? This cannot be undone.`}
-        confirmLabel="Reject"
+        title="Soft Reject Submission"
+        description={`Reject "${selected?.resort_name}"? User visits will be preserved and the user will be notified to reassign them to the correct resort.`}
+        confirmLabel={actionLoading ? 'Rejecting...' : 'Soft Reject'}
         variant="destructive"
-        onConfirm={handleReject}
+        onConfirm={handleSoftReject}
+      />
+      <ConfirmDialog
+        open={confirmAction === 'hard_delete'}
+        onOpenChange={(open) => !open && setConfirmAction(null)}
+        title="Permanently Delete"
+        description={`Permanently delete "${selected?.resort_name}" and ALL linked visits, photos, and data? This cannot be undone. Only use for spam or test submissions.`}
+        confirmLabel={actionLoading ? 'Deleting...' : 'Delete Forever'}
+        variant="destructive"
+        onConfirm={handleHardDelete}
       />
     </div>
   )
