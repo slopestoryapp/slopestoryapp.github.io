@@ -11,6 +11,7 @@ export type PageId =
   | 'submissions'
   | 'feature-photos'
   | 'resorts'
+  | 'bulk-import'
   | 'users'
   | 'support'
   | 'roadmap'
@@ -31,6 +32,7 @@ export const NAV_ITEMS: NavItem[] = [
   { id: 'submissions', label: 'Submissions', icon: 'Inbox', badgeKey: 'pendingSubmissions' },
   { id: 'feature-photos', label: 'Feature Photos', icon: 'ImagePlus', badgeKey: 'pendingPhotos' },
   { id: 'resorts', label: 'Resorts', icon: 'Mountain' },
+  { id: 'bulk-import', label: 'Bulk Import', icon: 'Upload' },
   { id: 'users', label: 'Users', icon: 'Users' },
   { id: 'support', label: 'Support', icon: 'LifeBuoy', badgeKey: 'pendingTickets' },
   { id: 'roadmap', label: 'Roadmap', icon: 'Map' },

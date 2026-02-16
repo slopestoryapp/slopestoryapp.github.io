@@ -16,6 +16,7 @@ import { VisitsPage } from '@/pages/visits'
 import { AnalyticsPage } from '@/pages/analytics'
 import { ActivityPage } from '@/pages/activity'
 import { SystemPage } from '@/pages/system'
+import { BulkImportPage } from '@/pages/bulk-import'
 import { supabase } from '@/lib/supabase'
 import type { PageId } from '@/lib/constants'
 import { Loader2 } from 'lucide-react'
@@ -92,6 +93,7 @@ export default function App() {
       case 'submissions': return <SubmissionsPage />
       case 'feature-photos': return <FeaturePhotosPage />
       case 'resorts': return <ResortsPage />
+      case 'bulk-import': return <BulkImportPage />
       case 'users': return <UsersPage />
       case 'support': return <SupportPage />
       case 'roadmap': return <RoadmapPage />
