@@ -21,7 +21,7 @@ export function LoginPage({ onSignIn, loading, error }: LoginPageProps) {
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-slope-slate-dark to-slope-slate-darker">
       <img
-        src="https://rnudbfdhrenesamdjzdk.supabase.co/storage/v1/object/public/brand-assets/logo-light.png"
+        src="https://photos.slopestory.com/brand-assets/logo-light.png"
         alt="SlopeStory"
         className="h-12 mb-6"
       />

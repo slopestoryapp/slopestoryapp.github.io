@@ -1,8 +1,8 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { toast } from 'sonner'
 import { useAuditLog } from '@/hooks/use-audit-log'
-import { PAGE_SIZE } from '@/lib/constants'
+import { PAGE_SIZE, SUPABASE_URL } from '@/lib/constants'
 import { Header } from '@/components/layout/header'
 import { ExportButton } from '@/components/shared/export-button'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
@@ -29,7 +29,7 @@ import {
   SelectItem,
 } from '@/components/ui/select'
 import { type ColumnDef } from '@tanstack/react-table'
-import { Search, Loader2, Trash2, Save, AlertTriangle } from 'lucide-react'
+import { Search, Loader2, Trash2, Save, AlertTriangle, Plus, ImageIcon } from 'lucide-react'
 
 interface Resort {
   id: string
@@ -123,8 +123,48 @@ export function ResortsPage() {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
+  // Add dialog
+  const [addDialogOpen, setAddDialogOpen] = useState(false)
+  const [addForm, setAddForm] = useState<Partial<Resort>>({ verified: false })
+  const [adding, setAdding] = useState(false)
+
+  // Image processing (shared between add and edit)
+  const [processingImage, setProcessingImage] = useState(false)
+  const [sourceImageUrl, setSourceImageUrl] = useState('')
+
   // Duplicates
   const [duplicates, setDuplicates] = useState<string[]>([])
+
+  // Fetch random placeholder URL from existing resorts
+  const getRandomPlaceholder = useCallback(async (): Promise<string | null> => {
+    const { data } = await supabase
+      .from('resorts')
+      .select('cover_image_url')
+      .like('cover_image_url', '%/resorts/placeholders/%')
+      .limit(100)
+
+    if (!data?.length) return null
+    const unique = [...new Set(data.map((r) => r.cover_image_url).filter(Boolean))]
+    return unique[Math.floor(Math.random() * unique.length)] ?? null
+  }, [])
+
+  // Process image via edge function (shared between add and edit)
+  const processImage = useCallback(async (resortName: string, imageUrl: string): Promise<string> => {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) throw new Error('Not authenticated')
+
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/process-resort-image`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({ photo_url: imageUrl, resort_name: resortName }),
+    })
+    const data = await res.json()
+    if (!res.ok) throw new Error(data.error || 'Image processing failed')
+    return data.url
+  }, [])
 
   const loadResorts = useCallback(async () => {
     try {
@@ -195,6 +235,7 @@ export function ResortsPage() {
   const openEdit = useCallback((resort: Resort) => {
     setEditResort(resort)
     setEditForm({ ...resort })
+    setSourceImageUrl('')
   }, [])
 
   const updateField = useCallback(
@@ -266,6 +307,74 @@ export function ResortsPage() {
     loadResorts()
   }, [editResort, log, loadResorts])
 
+  const updateAddField = useCallback(
+    (field: keyof Resort, value: string | number | boolean | null) => {
+      setAddForm((prev) => ({ ...prev, [field]: value }))
+    },
+    []
+  )
+
+  const handleAdd = useCallback(async () => {
+    if (!addForm.name || !addForm.country) {
+      toast.error('Name and country are required')
+      return
+    }
+    setAdding(true)
+    try {
+      // Auto-assign placeholder if no cover image provided
+      let payload = { ...addForm }
+      if (!payload.cover_image_url) {
+        const placeholder = await getRandomPlaceholder()
+        if (placeholder) {
+          payload = { ...payload, cover_image_url: placeholder }
+        }
+      }
+
+      const { error } = await supabase.from('resorts').insert(payload)
+      if (error) {
+        toast.error(`Failed to add: ${error.message}`)
+        return
+      }
+
+      await log({
+        action: 'create_resort',
+        entity_type: 'resort',
+        details: { resort_name: addForm.name },
+      })
+
+      toast.success(`Created: ${addForm.name}`)
+      setAddDialogOpen(false)
+      setAddForm({ verified: false })
+      setSourceImageUrl('')
+      loadResorts()
+    } catch {
+      toast.error('Failed to add resort')
+    } finally {
+      setAdding(false)
+    }
+  }, [addForm, log, loadResorts, getRandomPlaceholder])
+
+  const handleProcessImage = useCallback(async (mode: 'add' | 'edit') => {
+    const name = mode === 'add' ? addForm.name : editForm.name
+    if (!name || !sourceImageUrl) return
+
+    setProcessingImage(true)
+    try {
+      const url = await processImage(name, sourceImageUrl)
+      if (mode === 'add') {
+        setAddForm((prev) => ({ ...prev, cover_image_url: url }))
+      } else {
+        setEditForm((prev) => ({ ...prev, cover_image_url: url }))
+      }
+      setSourceImageUrl('')
+      toast.success('Image processed and saved to R2')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Image processing failed')
+    } finally {
+      setProcessingImage(false)
+    }
+  }, [addForm.name, editForm.name, sourceImageUrl, processImage])
+
   return (
     <div className="flex flex-col h-full">
       <Header
@@ -290,6 +399,10 @@ export function ResortsPage() {
           </div>
           <Button variant="outline" size="sm" onClick={handleSearchSubmit}>
             Search
+          </Button>
+          <Button size="sm" onClick={() => setAddDialogOpen(true)} className="gap-1.5">
+            <Plus className="w-4 h-4" />
+            Add Resort
           </Button>
           <ExportButton
             data={resorts as unknown as Record<string, unknown>[]}
@@ -366,7 +479,6 @@ export function ResortsPage() {
                 ['country_code', 'Country Code'],
                 ['region', 'Region'],
                 ['website', 'Website'],
-                ['cover_image_url', 'Cover Image URL'],
                 ['pass_affiliation', 'Pass Affiliation'],
                 ['season_open', 'Season Open'],
                 ['season_close', 'Season Close'],
@@ -381,6 +493,45 @@ export function ResortsPage() {
                   />
                 </div>
               ))}
+
+              {/* Cover Image with preview and processing */}
+              <div className="col-span-2">
+                <Label className="text-xs">Cover Image</Label>
+                {editForm.cover_image_url && (
+                  <img
+                    src={editForm.cover_image_url}
+                    alt=""
+                    className="mt-1 rounded-lg max-h-32 w-full object-cover"
+                  />
+                )}
+                <Input
+                  value={(editForm.cover_image_url as string) ?? ''}
+                  onChange={(e) => updateField('cover_image_url', e.target.value || null)}
+                  placeholder="Cover image URL"
+                  className="mt-1"
+                />
+                <div className="flex gap-2 mt-2">
+                  <Input
+                    value={sourceImageUrl}
+                    onChange={(e) => setSourceImageUrl(e.target.value)}
+                    placeholder="Paste source image URL to process..."
+                    className="flex-1"
+                  />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleProcessImage('edit')}
+                    disabled={processingImage || !sourceImageUrl || !editForm.name}
+                  >
+                    {processingImage ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <ImageIcon className="w-4 h-4 mr-1" />
+                    )}
+                    Process
+                  </Button>
+                </div>
+              </div>
 
               {/* Number fields */}
               {([
@@ -487,6 +638,194 @@ export function ResortsPage() {
                 <Save className="w-4 h-4 mr-1" />
               )}
               Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Resort Dialog */}
+      <Dialog
+        open={addDialogOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            setAddForm({ verified: false })
+            setSourceImageUrl('')
+          }
+          setAddDialogOpen(open)
+        }}
+      >
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Add Resort</DialogTitle>
+            <DialogDescription>
+              Create a new ski resort. Name and country are required.
+            </DialogDescription>
+          </DialogHeader>
+
+          <ScrollArea className="flex-1 pr-4">
+            <div className="grid grid-cols-2 gap-4 py-4">
+              {/* Text fields */}
+              {([
+                ['name', 'Name *'],
+                ['country', 'Country *'],
+                ['country_code', 'Country Code'],
+                ['region', 'Region'],
+                ['website', 'Website'],
+                ['pass_affiliation', 'Pass Affiliation'],
+                ['season_open', 'Season Open'],
+                ['season_close', 'Season Close'],
+                ['instagram_handle', 'Instagram'],
+              ] as [keyof Resort, string][]).map(([field, label]) => (
+                <div key={field}>
+                  <Label className="text-xs">{label}</Label>
+                  <Input
+                    value={(addForm[field] as string) ?? ''}
+                    onChange={(e) => updateAddField(field, e.target.value || null)}
+                    className="mt-1"
+                  />
+                </div>
+              ))}
+
+              {/* Cover Image with processing */}
+              <div className="col-span-2">
+                <Label className="text-xs">Cover Image</Label>
+                {addForm.cover_image_url && (
+                  <img
+                    src={addForm.cover_image_url}
+                    alt=""
+                    className="mt-1 rounded-lg max-h-32 w-full object-cover"
+                  />
+                )}
+                <Input
+                  value={(addForm.cover_image_url as string) ?? ''}
+                  onChange={(e) => updateAddField('cover_image_url', e.target.value || null)}
+                  placeholder="Cover image URL (leave empty for random placeholder)"
+                  className="mt-1"
+                />
+                <div className="flex gap-2 mt-2">
+                  <Input
+                    value={sourceImageUrl}
+                    onChange={(e) => setSourceImageUrl(e.target.value)}
+                    placeholder="Paste source image URL to process..."
+                    className="flex-1"
+                  />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleProcessImage('add')}
+                    disabled={processingImage || !sourceImageUrl || !addForm.name}
+                  >
+                    {processingImage ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <ImageIcon className="w-4 h-4 mr-1" />
+                    )}
+                    Process
+                  </Button>
+                </div>
+                {!addForm.cover_image_url && (
+                  <p className="text-[11px] text-muted-foreground mt-1">
+                    If left empty, a random placeholder image will be assigned.
+                  </p>
+                )}
+              </div>
+
+              {/* Number fields */}
+              {([
+                ['lat', 'Latitude'],
+                ['lng', 'Longitude'],
+                ['vertical_m', 'Vertical (m)'],
+                ['runs', 'Runs'],
+                ['lifts', 'Lifts'],
+                ['annual_snowfall_cm', 'Snowfall (cm)'],
+                ['beginner_pct', 'Beginner %'],
+                ['intermediate_pct', 'Intermediate %'],
+                ['advanced_pct', 'Advanced %'],
+              ] as [keyof Resort, string][]).map(([field, label]) => (
+                <div key={field}>
+                  <Label className="text-xs">{label}</Label>
+                  <Input
+                    type="number"
+                    value={(addForm[field] as number) ?? ''}
+                    onChange={(e) =>
+                      updateAddField(
+                        field,
+                        e.target.value ? Number(e.target.value) : null
+                      )
+                    }
+                    className="mt-1"
+                  />
+                </div>
+              ))}
+
+              {/* Boolean: Verified */}
+              <div>
+                <Label className="text-xs">Verified</Label>
+                <Select
+                  value={addForm.verified ? 'true' : 'false'}
+                  onValueChange={(v) => updateAddField('verified', v === 'true')}
+                >
+                  <SelectTrigger className="mt-1">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="true">Verified</SelectItem>
+                    <SelectItem value="false">Unverified</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Boolean: Night Skiing */}
+              <div>
+                <Label className="text-xs">Night Skiing</Label>
+                <Select
+                  value={
+                    addForm.has_night_skiing === null || addForm.has_night_skiing === undefined
+                      ? 'null'
+                      : addForm.has_night_skiing
+                        ? 'true'
+                        : 'false'
+                  }
+                  onValueChange={(v) =>
+                    updateAddField(
+                      'has_night_skiing',
+                      v === 'null' ? null : v === 'true'
+                    )
+                  }
+                >
+                  <SelectTrigger className="mt-1">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="true">Yes</SelectItem>
+                    <SelectItem value="false">No</SelectItem>
+                    <SelectItem value="null">Unknown</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Description */}
+              <div className="col-span-2">
+                <Label className="text-xs">Description</Label>
+                <textarea
+                  value={(addForm.description as string) ?? ''}
+                  onChange={(e) =>
+                    updateAddField('description', e.target.value || null)
+                  }
+                  className="mt-1 flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring min-h-[80px]"
+                />
+              </div>
+            </div>
+          </ScrollArea>
+
+          <DialogFooter>
+            <Button onClick={handleAdd} disabled={adding || !addForm.name || !addForm.country}>
+              {adding ? (
+                <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+              ) : (
+                <Plus className="w-4 h-4 mr-1" />
+              )}
+              Add Resort
             </Button>
           </DialogFooter>
         </DialogContent>

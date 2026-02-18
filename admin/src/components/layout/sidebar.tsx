@@ -51,7 +51,7 @@ export function Sidebar({ currentPage, onNavigate, badges, userEmail, onSignOut 
       >
         <div className="flex items-center gap-3 px-5 py-5 border-b border-border">
           <img
-            src="https://rnudbfdhrenesamdjzdk.supabase.co/storage/v1/object/public/brand-assets/logo-light.png"
+            src="https://photos.slopestory.com/brand-assets/logo-light.png"
             alt=""
             className="h-8"
           />

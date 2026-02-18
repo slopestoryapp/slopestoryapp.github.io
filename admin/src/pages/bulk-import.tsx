@@ -1083,7 +1083,7 @@ export function BulkImportPage() {
                         onChange={(e) => setPlaceholderUrlsText(e.target.value)}
                         rows={5}
                         className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs font-mono placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring resize-y"
-                        placeholder="https://rnudbfdhrenesamdjzdk.supabase.co/storage/v1/object/public/resort-placeholders/mountain-01.jpg"
+                        placeholder="https://photos.slopestory.com/resorts/placeholders/mountain-01.jpg"
                       />
                     </div>
                   )}
@@ -1329,7 +1329,7 @@ export function BulkImportPage() {
                   onChange={(e) => setPlaceholderInput(e.target.value)}
                   rows={8}
                   className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs font-mono placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring resize-y"
-                  placeholder={`https://rnudbfdhrenesamdjzdk.supabase.co/storage/v1/object/public/resort-placeholders/mountain-01.jpg\nhttps://rnudbfdhrenesamdjzdk.supabase.co/storage/v1/object/public/resort-placeholders/mountain-02.jpg`}
+                  placeholder={`https://photos.slopestory.com/resorts/placeholders/mountain-01.jpg\nhttps://photos.slopestory.com/resorts/placeholders/mountain-02.jpg`}
                 />
                 <Button
                   onClick={handleAssignPlaceholders}
