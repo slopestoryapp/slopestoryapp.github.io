@@ -10,6 +10,7 @@ import {
   type SortingState,
   type ColumnFiltersState,
   type RowSelectionState,
+  type PaginationState,
 } from '@tanstack/react-table'
 import { ArrowUpDown, ChevronLeft, ChevronRight } from 'lucide-react'
 import {
@@ -49,6 +50,7 @@ export function DataTable<TData, TValue>({
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({})
   const [globalFilter, setGlobalFilter] = useState('')
+  const [pagination, setPagination] = useState<PaginationState>({ pageIndex: 0, pageSize })
 
   const table = useReactTable({
     data,
@@ -61,13 +63,14 @@ export function DataTable<TData, TValue>({
     onColumnFiltersChange: setColumnFilters,
     onRowSelectionChange: enableSelection ? setRowSelection : undefined,
     onGlobalFilterChange: setGlobalFilter,
+    onPaginationChange: serverPagination ? undefined : setPagination,
     globalFilterFn: 'includesString',
     state: {
       sorting,
       columnFilters,
       rowSelection,
       globalFilter,
-      ...(serverPagination ? {} : { pagination: { pageIndex: 0, pageSize } }),
+      ...(serverPagination ? {} : { pagination }),
     },
     enableRowSelection: enableSelection,
   })
