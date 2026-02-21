@@ -33,8 +33,6 @@ import type { ColumnDef } from '@tanstack/react-table'
 import {
   Upload,
   Loader2,
-  ArrowLeft,
-  ArrowRight,
   CheckCircle2,
   AlertTriangle,
   FileJson,
@@ -42,6 +40,12 @@ import {
   Eye,
   ShieldCheck,
   ImageIcon,
+  Trash2,
+  Database,
+  CircleDot,
+  SkipForward,
+  RefreshCw,
+  XCircle,
 } from 'lucide-react'
 
 // ---------------------------------------------------------------------------
@@ -71,16 +75,27 @@ interface ImportResortRow {
   description?: string
 }
 
-interface PreviewResult {
-  input_index: number
-  input_name: string
-  input_country: string
-  match_type: 'new' | 'exact' | 'similar'
-  existing_resort_id: string | null
-  existing_name: string | null
-  existing_country: string | null
-  similarity_score: number
-  existing_data: Record<string, unknown> | null
+interface RowIssue {
+  field: string
+  message: string
+}
+
+interface WorkbenchRow {
+  index: number
+  data: ImportResortRow
+  originalData: ImportResortRow
+  status: 'error' | 'warning' | 'ready' | 'skipped'
+  errors: RowIssue[]
+  warnings: RowIssue[]
+  checked: boolean
+  matchType: 'new' | 'exact' | 'similar' | null
+  matchedResortId: string | null
+  matchedResortName: string | null
+  matchSimilarity: number | null
+  matchedData: Record<string, unknown> | null
+  action: 'import' | 'merge' | 'skip' | null
+  completeness: { filled: number; total: number }
+  isDirty: boolean
 }
 
 interface UnverifiedResort {
@@ -98,10 +113,39 @@ interface UnverifiedResort {
   verified: boolean
   verification_notes: string | null
   pass_affiliation: string | null
+  annual_snowfall_cm: number | null
+  beginner_pct: number | null
+  intermediate_pct: number | null
+  advanced_pct: number | null
+  season_open: string | null
+  season_close: string | null
+  has_night_skiing: boolean | null
+  description: string | null
+  budget_tier: string | null
+  cover_image_url: string | null
 }
 
-type WizardStep = 'upload' | 'preview' | 'review' | 'importing' | 'done'
 type TopTab = 'import' | 'verification' | 'placeholders'
+type StatusFilter = 'all' | 'error' | 'warning' | 'ready' | 'skipped'
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+const COMPLETENESS_FIELDS: (keyof ImportResortRow)[] = [
+  'country_code', 'region', 'vertical_m', 'runs', 'lifts',
+  'annual_snowfall_cm', 'beginner_pct', 'intermediate_pct', 'advanced_pct',
+  'season_open', 'season_close', 'has_night_skiing', 'description',
+]
+
+// For verification queue — same fields but checked on UnverifiedResort
+const VERIFY_COMPLETENESS_FIELDS: (keyof UnverifiedResort)[] = [
+  'country_code', 'region', 'vertical_m', 'runs', 'lifts',
+  'annual_snowfall_cm', 'beginner_pct', 'intermediate_pct', 'advanced_pct',
+  'season_open', 'season_close', 'has_night_skiing', 'description', 'budget_tier',
+]
+
+const BATCH_SIZE = 500
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -130,25 +174,35 @@ async function callEdgeFunction(
   return data
 }
 
-function similarityBadge(score: number) {
-  if (score >= 0.8) return { label: 'High', className: 'bg-green-500/15 text-green-400' }
-  if (score >= 0.5) return { label: 'Medium', className: 'bg-yellow-500/15 text-yellow-400' }
-  return { label: 'Low', className: 'bg-slate-500/15 text-slate-400' }
-}
-
-function validateRow(row: Record<string, unknown>, index: number): string | null {
-  const name = row.name
-  const country = row.country
-  const countryCode = row.country_code
-  const lat = Number(row.lat ?? row.latitude)
-  const lng = Number(row.lng ?? row.longitude)
-
-  if (!name || (typeof name === 'string' && !name.trim())) return `Row ${index + 1}: missing name`
-  if (!country || (typeof country === 'string' && !country.trim())) return `Row ${index + 1}: missing country`
-  if (!countryCode || (typeof countryCode === 'string' && !countryCode.trim())) return `Row ${index + 1}: missing country_code`
-  if (isNaN(lat) || lat < -90 || lat > 90) return `Row ${index + 1}: invalid lat (${row.lat ?? row.latitude})`
-  if (isNaN(lng) || lng < -180 || lng > 180) return `Row ${index + 1}: invalid lng (${row.lng ?? row.longitude})`
-  return null
+function parseCSV(text: string): Record<string, unknown>[] {
+  const lines = text.split(/\r?\n/).filter(l => l.trim())
+  if (lines.length < 2) return []
+  const headers = lines[0].split(',').map(h => h.trim().replace(/^"(.*)"$/, '$1'))
+  const rows: Record<string, unknown>[] = []
+  for (let i = 1; i < lines.length; i++) {
+    const fields: string[] = []
+    let current = ''
+    let inQuotes = false
+    for (const char of lines[i]) {
+      if (char === '"') { inQuotes = !inQuotes; continue }
+      if (char === ',' && !inQuotes) { fields.push(current.trim()); current = ''; continue }
+      current += char
+    }
+    fields.push(current.trim())
+    if (fields.length !== headers.length) continue
+    const row: Record<string, unknown> = {}
+    headers.forEach((h, idx) => {
+      const val = fields[idx]
+      if (val === '' || val === 'null' || val === 'undefined') { row[h] = null; return }
+      if (val === 'true') { row[h] = true; return }
+      if (val === 'false') { row[h] = false; return }
+      const num = Number(val)
+      if (!isNaN(num) && val !== '') { row[h] = num; return }
+      row[h] = val
+    })
+    rows.push(row)
+  }
+  return rows
 }
 
 function normalizeRow(raw: Record<string, unknown>): ImportResortRow {
@@ -176,40 +230,78 @@ function normalizeRow(raw: Record<string, unknown>): ImportResortRow {
   }
 }
 
-function parseCSV(text: string): Record<string, unknown>[] {
-  const lines = text.split(/\r?\n/).filter(l => l.trim())
-  if (lines.length < 2) return []
-  const headers = lines[0].split(',').map(h => h.trim().replace(/^"(.*)"$/, '$1'))
-  const rows: Record<string, unknown>[] = []
-  for (let i = 1; i < lines.length; i++) {
-    // Basic CSV field splitting that handles quoted commas
-    const fields: string[] = []
-    let current = ''
-    let inQuotes = false
-    for (const char of lines[i]) {
-      if (char === '"') { inQuotes = !inQuotes; continue }
-      if (char === ',' && !inQuotes) { fields.push(current.trim()); current = ''; continue }
-      current += char
-    }
-    fields.push(current.trim())
-
-    if (fields.length !== headers.length) continue
-    const row: Record<string, unknown> = {}
-    headers.forEach((h, idx) => {
-      const val = fields[idx]
-      if (val === '' || val === 'null' || val === 'undefined') { row[h] = null; return }
-      if (val === 'true') { row[h] = true; return }
-      if (val === 'false') { row[h] = false; return }
-      const num = Number(val)
-      if (!isNaN(num) && val !== '') { row[h] = num; return }
-      row[h] = val
-    })
-    rows.push(row)
+function computeCompleteness(data: ImportResortRow): { filled: number; total: number } {
+  const total = COMPLETENESS_FIELDS.length
+  let filled = 0
+  for (const field of COMPLETENESS_FIELDS) {
+    const val = data[field]
+    if (val !== null && val !== undefined && val !== '') filled++
   }
-  return rows
+  return { filled, total }
 }
 
-const BATCH_SIZE = 500
+function validateAndScore(data: ImportResortRow): { errors: RowIssue[]; warnings: RowIssue[] } {
+  const errors: RowIssue[] = []
+  const warnings: RowIssue[] = []
+
+  if (!data.name?.trim()) errors.push({ field: 'name', message: 'Name is required' })
+  if (!data.country?.trim()) errors.push({ field: 'country', message: 'Country is required' })
+  if (!data.country_code?.trim()) errors.push({ field: 'country_code', message: 'Country code is required' })
+  else if (data.country_code.length !== 2) errors.push({ field: 'country_code', message: 'Country code must be 2 characters' })
+  if (typeof data.lat !== 'number' || isNaN(data.lat) || data.lat < -90 || data.lat > 90)
+    errors.push({ field: 'lat', message: 'Latitude must be between -90 and 90' })
+  if (typeof data.lng !== 'number' || isNaN(data.lng) || data.lng < -180 || data.lng > 180)
+    errors.push({ field: 'lng', message: 'Longitude must be between -180 and 180' })
+
+  // Terrain percentage check
+  const b = data.beginner_pct ?? 0
+  const i = data.intermediate_pct ?? 0
+  const a = data.advanced_pct ?? 0
+  if ((b > 0 || i > 0 || a > 0) && Math.abs(b + i + a - 100) > 5) {
+    warnings.push({ field: 'terrain_pct', message: `Terrain percentages sum to ${b + i + a}% (expected ~100%)` })
+  }
+
+  return { errors, warnings }
+}
+
+function computeRowStatus(row: WorkbenchRow): WorkbenchRow['status'] {
+  if (row.action === 'skip') return 'skipped'
+  if (row.errors.length > 0) return 'error'
+  if (row.checked && (row.matchType === 'exact' || row.matchType === 'similar') && !row.action) return 'warning'
+  if (row.isDirty && row.checked) return 'warning' // edited after DB check, needs re-check
+  return 'ready'
+}
+
+function getVerifyCompleteness(resort: UnverifiedResort): { filled: number; total: number; label: string; color: string } {
+  const total = VERIFY_COMPLETENESS_FIELDS.length
+  let filled = 0
+  for (const field of VERIFY_COMPLETENESS_FIELDS) {
+    const val = resort[field]
+    if (val !== null && val !== undefined && val !== '') filled++
+  }
+  let label: string
+  let color: string
+  if (filled === total) {
+    label = 'Ready'
+    color = 'text-green-400'
+  } else if (filled >= 10) {
+    label = 'Almost'
+    color = 'text-yellow-400'
+  } else {
+    label = 'Needs Work'
+    color = 'text-red-400'
+  }
+  return { filled, total, label, color }
+}
+
+function statusIcon(status: WorkbenchRow['status']) {
+  switch (status) {
+    case 'error': return <XCircle className="w-4 h-4 text-red-400" />
+    case 'warning': return <AlertTriangle className="w-4 h-4 text-yellow-400" />
+    case 'ready': return <CheckCircle2 className="w-4 h-4 text-green-400" />
+    case 'skipped': return <SkipForward className="w-4 h-4 text-slate-400" />
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Main Page
@@ -221,35 +313,26 @@ export function BulkImportPage() {
   // Top-level tab
   const [topTab, setTopTab] = useState<TopTab>('import')
 
-  // -- Import Wizard State --
-  const [step, setStep] = useState<WizardStep>('upload')
+  // =========================================================================
+  // IMPORT WORKBENCH STATE
+  // =========================================================================
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [fileName, setFileName] = useState('')
-  const [parsedRows, setParsedRows] = useState<ImportResortRow[]>([])
   const [parseErrors, setParseErrors] = useState<string[]>([])
-  const [dragOver, setDragOver] = useState(false)
-
-  // Preview state
-  const [previewLoading, setPreviewLoading] = useState(false)
-  const [previewProgress, setPreviewProgress] = useState({ batch: 0, total: 0 })
-  const [previewNew, setPreviewNew] = useState<PreviewResult[]>([])
-  const [previewExact, setPreviewExact] = useState<PreviewResult[]>([])
-  const [previewSimilar, setPreviewSimilar] = useState<PreviewResult[]>([])
-  const [previewTab, setPreviewTab] = useState('new')
-  const [selectedNew, setSelectedNew] = useState<Set<number>>(new Set())
-  const [selectedExact, setSelectedExact] = useState<Set<number>>(new Set())
-  const [similarActions, setSimilarActions] = useState<Map<number, string>>(new Map())
+  const [workbenchRows, setWorkbenchRows] = useState<WorkbenchRow[]>([])
+  const [selectedRowIndex, setSelectedRowIndex] = useState<number | null>(null)
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+  const [dbCheckLoading, setDbCheckLoading] = useState(false)
+  const [dbCheckProgress, setDbCheckProgress] = useState({ batch: 0, total: 0 })
+  const [pushLoading, setPushLoading] = useState(false)
+  const [pushProgress, setPushProgress] = useState({ batch: 0, total: 0 })
+  const [pushResults, setPushResults] = useState<{ inserted: number; updated: number; placeholders: number } | null>(null)
+  const [pushConfirmOpen, setPushConfirmOpen] = useState(false)
   const [compareOpen, setCompareOpen] = useState(false)
-  const [compareItem, setCompareItem] = useState<PreviewResult | null>(null)
 
-  // Review & import state
-  const [placeholderUrlsText, setPlaceholderUrlsText] = useState('')
-  const [assignPlaceholders, setAssignPlaceholders] = useState(true)
-  const [confirmChecked, setConfirmChecked] = useState(false)
-  const [confirmDialogOpen, setConfirmDialogOpen] = useState(false)
-  const [importing, setImporting] = useState(false)
-  const [importProgress, setImportProgress] = useState({ batch: 0, total: 0 })
-  const [importResults, setImportResults] = useState<{ inserted: number; updated: number; placeholders: number } | null>(null)
+  // -- Placeholder discovery (shared between Import + Placeholders tabs) --
+  const [discoveredPlaceholders, setDiscoveredPlaceholders] = useState<string[]>([])
+  const [placeholdersFetching, setPlaceholdersFetching] = useState(false)
 
   // -- Verification Tab State --
   const [unverifiedResorts, setUnverifiedResorts] = useState<UnverifiedResort[]>([])
@@ -262,17 +345,65 @@ export function BulkImportPage() {
   const [verifyDialogOpen, setVerifyDialogOpen] = useState(false)
   const [verifyDialogResort, setVerifyDialogResort] = useState<UnverifiedResort | null>(null)
   const [verifyNotes, setVerifyNotes] = useState('')
+  const [deleteLoading, setDeleteLoading] = useState(false)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [deleteBlockedDialogOpen, setDeleteBlockedDialogOpen] = useState(false)
+  const [deleteBlockedResorts, setDeleteBlockedResorts] = useState<{ id: string; name: string; reason: string }[]>([])
+  const [deleteResult, setDeleteResult] = useState<{ deleted: number } | null>(null)
 
   // -- Placeholders Tab State --
   const [noCoverCount, setNoCoverCount] = useState(0)
   const [hasCoverCount, setHasCoverCount] = useState(0)
-  const [placeholderInput, setPlaceholderInput] = useState('')
   const [assigningPlaceholders, setAssigningPlaceholders] = useState(false)
   const [placeholdersLoading, setPlaceholdersLoading] = useState(false)
 
   // =========================================================================
-  // IMPORT WIZARD
+  // SHARED: Placeholder discovery from R2
   // =========================================================================
+
+  const fetchPlaceholderUrls = useCallback(async (force = false) => {
+    if (discoveredPlaceholders.length > 0 && !force) return
+    setPlaceholdersFetching(true)
+    try {
+      const res = await callEdgeFunction('admin-bulk-import-resorts', {
+        action: 'list_placeholders',
+      })
+      setDiscoveredPlaceholders(res.urls ?? [])
+    } catch (err) {
+      console.error('Failed to fetch placeholders:', err)
+      toast.error('Failed to load placeholder images from R2')
+    } finally {
+      setPlaceholdersFetching(false)
+    }
+  }, [discoveredPlaceholders.length])
+
+  // =========================================================================
+  // IMPORT WORKBENCH
+  // =========================================================================
+
+  const buildWorkbenchRow = useCallback((data: ImportResortRow, index: number): WorkbenchRow => {
+    const { errors, warnings } = validateAndScore(data)
+    const completeness = computeCompleteness(data)
+    const row: WorkbenchRow = {
+      index,
+      data: { ...data },
+      originalData: { ...data },
+      status: 'ready',
+      errors,
+      warnings,
+      checked: false,
+      matchType: null,
+      matchedResortId: null,
+      matchedResortName: null,
+      matchSimilarity: null,
+      matchedData: null,
+      action: null,
+      completeness,
+      isDirty: false,
+    }
+    row.status = computeRowStatus(row)
+    return row
+  }, [])
 
   // -- File handling --
   const handleFile = useCallback((file: File) => {
@@ -282,7 +413,6 @@ export function BulkImportPage() {
       try {
         const text = e.target?.result as string
         let rawRows: Record<string, unknown>[]
-
         if (file.name.endsWith('.csv')) {
           rawRows = parseCSV(text)
         } else {
@@ -291,29 +421,35 @@ export function BulkImportPage() {
         }
 
         const errors: string[] = []
-        const valid: ImportResortRow[] = []
+        const rows: WorkbenchRow[] = []
         for (let i = 0; i < rawRows.length; i++) {
-          const err = validateRow(rawRows[i], i)
-          if (err) { errors.push(err); continue }
-          valid.push(normalizeRow(rawRows[i]))
+          const normalized = normalizeRow(rawRows[i])
+          // Basic parse-level check
+          const name = rawRows[i].name
+          if (!name || (typeof name === 'string' && !name.trim())) {
+            errors.push(`Row ${i + 1}: missing name`)
+            continue
+          }
+          rows.push(buildWorkbenchRow(normalized, rows.length))
         }
 
-        setParsedRows(valid)
+        setWorkbenchRows(rows)
         setParseErrors(errors)
-        if (valid.length > 0) toast.success(`Parsed ${valid.length} valid resorts`)
+        setSelectedRowIndex(null)
+        setPushResults(null)
+        if (rows.length > 0) toast.success(`Parsed ${rows.length} resorts`)
         else toast.error('No valid resort rows found')
       } catch {
         toast.error('Failed to parse file')
-        setParsedRows([])
+        setWorkbenchRows([])
         setParseErrors(['Failed to parse file. Ensure it is valid JSON or CSV.'])
       }
     }
     reader.readAsText(file)
-  }, [])
+  }, [buildWorkbenchRow])
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()
-    setDragOver(false)
     const file = e.dataTransfer.files[0]
     if (file) handleFile(file)
   }, [handleFile])
@@ -323,122 +459,161 @@ export function BulkImportPage() {
     if (file) handleFile(file)
   }, [handleFile])
 
-  const clearFile = useCallback(() => {
+  const clearWorkbench = useCallback(() => {
     setFileName('')
-    setParsedRows([])
+    setWorkbenchRows([])
     setParseErrors([])
+    setSelectedRowIndex(null)
+    setPushResults(null)
+    setStatusFilter('all')
     if (fileInputRef.current) fileInputRef.current.value = ''
   }, [])
 
-  // -- Preview --
-  const runPreview = useCallback(async () => {
-    if (!parsedRows.length) return
-    setPreviewLoading(true)
-    setPreviewNew([])
-    setPreviewExact([])
-    setPreviewSimilar([])
+  // -- Update a row's data field --
+  const updateRowField = useCallback((index: number, field: keyof ImportResortRow, value: unknown) => {
+    setWorkbenchRows(prev => {
+      const next = [...prev]
+      const row = { ...next[index] }
+      row.data = { ...row.data, [field]: value }
+      row.isDirty = true
+      const { errors, warnings } = validateAndScore(row.data)
+      row.errors = errors
+      row.warnings = warnings
+      row.completeness = computeCompleteness(row.data)
+      row.status = computeRowStatus(row)
+      next[index] = row
+      return next
+    })
+  }, [])
+
+  // -- Set row action --
+  const setRowAction = useCallback((index: number, action: WorkbenchRow['action']) => {
+    setWorkbenchRows(prev => {
+      const next = [...prev]
+      const row = { ...next[index], action }
+      row.status = computeRowStatus(row)
+      next[index] = row
+      return next
+    })
+  }, [])
+
+  // -- Check Against DB --
+  const checkAgainstDB = useCallback(async () => {
+    if (workbenchRows.length === 0) return
+    setDbCheckLoading(true)
 
     try {
-      const batches: ImportResortRow[][] = []
-      for (let i = 0; i < parsedRows.length; i += BATCH_SIZE) {
-        batches.push(parsedRows.slice(i, i + BATCH_SIZE))
+      const batches: WorkbenchRow[][] = []
+      for (let i = 0; i < workbenchRows.length; i += BATCH_SIZE) {
+        batches.push(workbenchRows.slice(i, i + BATCH_SIZE))
       }
-      setPreviewProgress({ batch: 0, total: batches.length })
+      setDbCheckProgress({ batch: 0, total: batches.length })
 
-      const allNew: PreviewResult[] = []
-      const allExact: PreviewResult[] = []
-      const allSimilar: PreviewResult[] = []
+      const updatedRows = [...workbenchRows]
 
-      for (let i = 0; i < batches.length; i++) {
-        setPreviewProgress({ batch: i + 1, total: batches.length })
+      for (let b = 0; b < batches.length; b++) {
+        setDbCheckProgress({ batch: b + 1, total: batches.length })
+        const batch = batches[b]
+        const resorts = batch.map(r => ({
+          name: r.data.name,
+          country: r.data.country,
+        }))
+
         const res = await callEdgeFunction('admin-bulk-import-resorts', {
           action: 'preview',
-          resorts: batches[i],
+          resorts,
         })
 
-        const offset = i * BATCH_SIZE
-        for (const r of res.results?.new ?? []) {
-          allNew.push({ ...r, input_index: r.input_index + offset })
-        }
-        for (const r of res.results?.exact_matches ?? []) {
-          allExact.push({ ...r, input_index: r.input_index + offset })
-        }
-        for (const r of res.results?.similar_matches ?? []) {
-          allSimilar.push({ ...r, input_index: r.input_index + offset })
+        const allResults = [
+          ...(res.results?.new ?? []),
+          ...(res.results?.exact_matches ?? []),
+          ...(res.results?.similar_matches ?? []),
+        ]
+
+        const offset = b * BATCH_SIZE
+        for (const result of allResults) {
+          const rowIndex = result.input_index + offset
+          if (rowIndex >= updatedRows.length) continue
+          const row = { ...updatedRows[rowIndex] }
+          row.checked = true
+          row.matchType = result.match_type
+          row.matchedResortId = result.existing_resort_id ?? null
+          row.matchedResortName = result.existing_name ?? null
+          row.matchSimilarity = result.similarity_score ?? null
+          row.matchedData = result.existing_data ?? null
+          row.isDirty = false
+
+          // Auto-set action for new matches
+          if (result.match_type === 'new') {
+            row.action = 'import'
+          }
+
+          row.status = computeRowStatus(row)
+          updatedRows[rowIndex] = row
         }
       }
 
-      setPreviewNew(allNew)
-      setPreviewExact(allExact)
-      setPreviewSimilar(allSimilar)
-
-      // Select all new by default
-      setSelectedNew(new Set(allNew.map(r => r.input_index)))
-      setSelectedExact(new Set())
-      setSimilarActions(new Map())
-
-      setStep('preview')
-      toast.success(`Preview complete: ${allNew.length} new, ${allExact.length} exact, ${allSimilar.length} similar`)
+      setWorkbenchRows(updatedRows)
+      toast.success('DB check complete')
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Preview failed')
+      toast.error(err instanceof Error ? err.message : 'DB check failed')
     } finally {
-      setPreviewLoading(false)
+      setDbCheckLoading(false)
     }
-  }, [parsedRows])
+  }, [workbenchRows])
 
-  // -- Import execution --
-  const executeImport = useCallback(async () => {
-    setConfirmDialogOpen(false)
-    setStep('importing')
-    setImporting(true)
+  // -- Push to DB --
+  const pushToDB = useCallback(async () => {
+    setPushConfirmOpen(false)
+    setPushLoading(true)
+    setPushResults(null)
 
     try {
-      // Build new resorts from selected new + similar "import as new"
       const newResorts: ImportResortRow[] = []
-      for (const idx of selectedNew) {
-        if (parsedRows[idx]) newResorts.push(parsedRows[idx])
-      }
-      for (const [idx, action] of similarActions) {
-        if (action === 'import' && parsedRows[idx]) newResorts.push(parsedRows[idx])
-      }
-
-      // Build updates from selected exact + similar "merge"
       const updates: { resort_id: string; fields: Partial<ImportResortRow> }[] = []
-      for (const idx of selectedExact) {
-        const match = previewExact.find(r => r.input_index === idx)
-        if (match?.existing_resort_id && parsedRows[idx]) {
-          updates.push({ resort_id: match.existing_resort_id, fields: parsedRows[idx] })
-        }
-      }
-      for (const [idx, action] of similarActions) {
-        if (action === 'merge') {
-          const match = previewSimilar.find(r => r.input_index === idx)
-          if (match?.existing_resort_id && parsedRows[idx]) {
-            updates.push({ resort_id: match.existing_resort_id, fields: parsedRows[idx] })
-          }
+
+      for (const row of workbenchRows) {
+        if (row.status === 'error' || row.status === 'skipped') continue
+        if (row.action === 'skip') continue
+
+        if (row.action === 'merge' && row.matchedResortId) {
+          updates.push({ resort_id: row.matchedResortId, fields: row.data })
+        } else if (row.action === 'import' || row.matchType === 'new' || !row.matchType) {
+          newResorts.push(row.data)
         }
       }
 
-      const placeholderUrls = assignPlaceholders
-        ? placeholderUrlsText.split('\n').map(u => u.trim()).filter(Boolean)
-        : undefined
+      if (newResorts.length === 0 && updates.length === 0) {
+        toast.error('No resorts to import')
+        setPushLoading(false)
+        return
+      }
 
-      // Batch new resorts
+      // Fetch placeholders from R2
+      let placeholderUrls: string[] | undefined
+      if (newResorts.length > 0) {
+        if (discoveredPlaceholders.length === 0) {
+          await fetchPlaceholderUrls(true)
+        }
+        if (discoveredPlaceholders.length > 0) {
+          placeholderUrls = discoveredPlaceholders
+        }
+      }
+
       const newBatches: ImportResortRow[][] = []
       for (let i = 0; i < newResorts.length; i += BATCH_SIZE) {
         newBatches.push(newResorts.slice(i, i + BATCH_SIZE))
       }
 
       const totalBatches = Math.max(newBatches.length, 1)
-      setImportProgress({ batch: 0, total: totalBatches })
+      setPushProgress({ batch: 0, total: totalBatches })
 
       let totalInserted = 0
       let totalUpdated = 0
       let totalPlaceholders = 0
 
       if (newBatches.length === 0 && updates.length > 0) {
-        // Only updates, no new resorts
-        setImportProgress({ batch: 1, total: 1 })
+        setPushProgress({ batch: 1, total: 1 })
         const res = await callEdgeFunction('admin-bulk-import-resorts', {
           action: 'import',
           new_resorts: [],
@@ -447,12 +622,11 @@ export function BulkImportPage() {
         totalUpdated = res.updated ?? 0
       } else {
         for (let i = 0; i < newBatches.length; i++) {
-          setImportProgress({ batch: i + 1, total: totalBatches })
+          setPushProgress({ batch: i + 1, total: totalBatches })
           const payload: Record<string, unknown> = {
             action: 'import',
             new_resorts: newBatches[i],
           }
-          // Send updates and placeholder URLs only with the first batch
           if (i === 0) {
             if (updates.length > 0) payload.updates = updates
             if (placeholderUrls?.length) payload.placeholder_urls = placeholderUrls
@@ -464,8 +638,7 @@ export function BulkImportPage() {
         }
       }
 
-      setImportResults({ inserted: totalInserted, updated: totalUpdated, placeholders: totalPlaceholders })
-      setStep('done')
+      setPushResults({ inserted: totalInserted, updated: totalUpdated, placeholders: totalPlaceholders })
       toast.success(`Import complete! ${totalInserted} inserted, ${totalUpdated} updated`)
 
       await log({
@@ -475,40 +648,33 @@ export function BulkImportPage() {
       })
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Import failed')
-      setStep('review')
     } finally {
-      setImporting(false)
+      setPushLoading(false)
     }
-  }, [parsedRows, selectedNew, selectedExact, similarActions, previewExact, previewSimilar, assignPlaceholders, placeholderUrlsText, log])
+  }, [workbenchRows, discoveredPlaceholders, fetchPlaceholderUrls, log])
 
-  const resetWizard = useCallback(() => {
-    setStep('upload')
-    clearFile()
-    setPreviewNew([])
-    setPreviewExact([])
-    setPreviewSimilar([])
-    setSelectedNew(new Set())
-    setSelectedExact(new Set())
-    setSimilarActions(new Map())
-    setConfirmChecked(false)
-    setImportResults(null)
-  }, [clearFile])
+  // -- Computed counts --
+  const counts = useMemo(() => ({
+    errors: workbenchRows.filter(r => r.status === 'error').length,
+    warnings: workbenchRows.filter(r => r.status === 'warning').length,
+    ready: workbenchRows.filter(r => r.status === 'ready').length,
+    skipped: workbenchRows.filter(r => r.status === 'skipped').length,
+    total: workbenchRows.length,
+    checked: workbenchRows.filter(r => r.checked).length,
+  }), [workbenchRows])
 
-  // Computed counts for review
-  const reviewCounts = useMemo(() => {
-    let newCount = selectedNew.size
-    let updateCount = selectedExact.size
-    let skipCount = previewNew.length + previewExact.length + previewSimilar.length - newCount - updateCount
+  const canPush = counts.errors === 0
+    && counts.warnings === 0
+    && counts.ready > 0
+    && counts.total > 0
+    && !pushLoading
 
-    for (const [, action] of similarActions) {
-      if (action === 'import') newCount++
-      else if (action === 'merge') updateCount++
-    }
-    // Recompute skip
-    skipCount = previewNew.length + previewExact.length + previewSimilar.length - newCount - updateCount
+  const filteredRows = useMemo(() => {
+    if (statusFilter === 'all') return workbenchRows
+    return workbenchRows.filter(r => r.status === statusFilter)
+  }, [workbenchRows, statusFilter])
 
-    return { newCount, updateCount, skipCount }
-  }, [selectedNew, selectedExact, similarActions, previewNew, previewExact, previewSimilar])
+  const selectedRow = selectedRowIndex !== null ? workbenchRows[selectedRowIndex] : null
 
   // =========================================================================
   // VERIFICATION TAB
@@ -521,7 +687,7 @@ export function BulkImportPage() {
       const [unverified, verified, total] = await Promise.all([
         supabase
           .from('resorts')
-          .select('id, name, country, country_code, region, lat, lng, website, vertical_m, runs, lifts, verified, verification_notes, pass_affiliation')
+          .select('id, name, country, country_code, region, lat, lng, website, vertical_m, runs, lifts, verified, verification_notes, pass_affiliation, annual_snowfall_cm, beginner_pct, intermediate_pct, advanced_pct, season_open, season_close, has_night_skiing, description, budget_tier, cover_image_url')
           .eq('verified', false)
           .order('name')
           .range(from, from + PAGE_SIZE - 1),
@@ -598,6 +764,45 @@ export function BulkImportPage() {
     }
   }, [loadUnverified, log])
 
+  const handleBulkDelete = useCallback(async () => {
+    if (selectedVerifyIds.size === 0) return
+    setDeleteLoading(true)
+    setDeleteDialogOpen(false)
+    try {
+      const res = await callEdgeFunction('admin-bulk-import-resorts', {
+        action: 'bulk_delete',
+        resort_ids: Array.from(selectedVerifyIds),
+      })
+
+      const blocked = res.blocked ?? []
+      const deleted = res.deleted ?? 0
+
+      if (blocked.length > 0) {
+        setDeleteBlockedResorts(blocked)
+        setDeleteResult(deleted > 0 ? { deleted } : null)
+        setDeleteBlockedDialogOpen(true)
+      }
+
+      if (deleted > 0) {
+        toast.success(`Deleted ${deleted} resort${deleted === 1 ? '' : 's'}`)
+        await log({
+          action: 'bulk_delete_resorts',
+          entity_type: 'resort',
+          details: { deleted, blocked_count: blocked.length },
+        })
+      } else if (blocked.length === 0) {
+        toast.error('No resorts were deleted')
+      }
+
+      setSelectedVerifyIds(new Set())
+      await loadUnverified()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to delete resorts')
+    } finally {
+      setDeleteLoading(false)
+    }
+  }, [selectedVerifyIds, loadUnverified, log])
+
   // =========================================================================
   // PLACEHOLDERS TAB
   // =========================================================================
@@ -624,17 +829,22 @@ export function BulkImportPage() {
   }, [])
 
   useEffect(() => {
-    if (topTab === 'placeholders') loadPlaceholderCounts()
-  }, [topTab, loadPlaceholderCounts])
+    if (topTab === 'placeholders') {
+      loadPlaceholderCounts()
+      fetchPlaceholderUrls()
+    }
+  }, [topTab, loadPlaceholderCounts, fetchPlaceholderUrls])
 
   const handleAssignPlaceholders = useCallback(async () => {
-    const urls = placeholderInput.split('\n').map(u => u.trim()).filter(Boolean)
-    if (urls.length === 0) { toast.error('Enter at least one placeholder URL'); return }
+    if (discoveredPlaceholders.length === 0) {
+      toast.error('No placeholder images available')
+      return
+    }
     setAssigningPlaceholders(true)
     try {
       const res = await callEdgeFunction('admin-bulk-import-resorts', {
         action: 'assign_placeholders',
-        placeholder_urls: urls,
+        placeholder_urls: discoveredPlaceholders,
       })
       toast.success(`Assigned ${res.assigned ?? 0} placeholder images`)
       await loadPlaceholderCounts()
@@ -648,172 +858,112 @@ export function BulkImportPage() {
     } finally {
       setAssigningPlaceholders(false)
     }
-  }, [placeholderInput, loadPlaceholderCounts, log])
+  }, [discoveredPlaceholders, loadPlaceholderCounts, log])
 
   // =========================================================================
   // COLUMN DEFINITIONS
   // =========================================================================
 
-  const newColumns = useMemo<ColumnDef<PreviewResult>[]>(() => [
+  const workbenchColumns = useMemo<ColumnDef<WorkbenchRow>[]>(() => [
     {
-      id: 'select',
-      header: () => (
-        <input
-          type="checkbox"
-          checked={selectedNew.size === previewNew.length && previewNew.length > 0}
-          onChange={(e) => {
-            if (e.target.checked) setSelectedNew(new Set(previewNew.map(r => r.input_index)))
-            else setSelectedNew(new Set())
-          }}
-          className="rounded"
-        />
-      ),
-      cell: ({ row }) => (
-        <input
-          type="checkbox"
-          checked={selectedNew.has(row.original.input_index)}
-          onChange={(e) => {
-            const next = new Set(selectedNew)
-            if (e.target.checked) next.add(row.original.input_index)
-            else next.delete(row.original.input_index)
-            setSelectedNew(next)
-          }}
-          className="rounded"
-        />
-      ),
+      id: 'status',
+      header: 'St',
+      cell: ({ row }) => statusIcon(row.original.status),
       size: 40,
     },
-    { accessorKey: 'input_name', header: 'Name' },
-    { accessorKey: 'input_country', header: 'Country' },
+    {
+      id: 'name',
+      header: 'Name',
+      accessorFn: (row) => row.data.name,
+      cell: ({ row }) => (
+        <span className={cn(
+          'font-medium text-sm',
+          row.original.errors.some(e => e.field === 'name') && 'text-red-400'
+        )}>
+          {row.original.data.name || '(empty)'}
+        </span>
+      ),
+    },
+    {
+      id: 'country',
+      header: 'Country',
+      accessorFn: (row) => row.data.country,
+      cell: ({ row }) => row.original.data.country || '-',
+    },
     {
       id: 'region',
       header: 'Region',
-      cell: ({ row }) => parsedRows[row.original.input_index]?.region ?? '-',
+      accessorFn: (row) => row.data.region,
+      cell: ({ row }) => row.original.data.region ?? '-',
     },
     {
-      id: 'vertical',
-      header: 'Vertical (m)',
-      cell: ({ row }) => parsedRows[row.original.input_index]?.vertical_m ?? '-',
-    },
-    {
-      id: 'lifts',
-      header: 'Lifts',
-      cell: ({ row }) => parsedRows[row.original.input_index]?.lifts ?? '-',
-    },
-    {
-      id: 'runs',
-      header: 'Runs',
-      cell: ({ row }) => parsedRows[row.original.input_index]?.runs ?? '-',
-    },
-  ], [selectedNew, previewNew, parsedRows])
-
-  const exactColumns = useMemo<ColumnDef<PreviewResult>[]>(() => [
-    {
-      id: 'select',
-      header: () => (
-        <input
-          type="checkbox"
-          checked={selectedExact.size === previewExact.length && previewExact.length > 0}
-          onChange={(e) => {
-            if (e.target.checked) setSelectedExact(new Set(previewExact.map(r => r.input_index)))
-            else setSelectedExact(new Set())
-          }}
-          className="rounded"
-        />
-      ),
-      cell: ({ row }) => (
-        <input
-          type="checkbox"
-          checked={selectedExact.has(row.original.input_index)}
-          onChange={(e) => {
-            const next = new Set(selectedExact)
-            if (e.target.checked) next.add(row.original.input_index)
-            else next.delete(row.original.input_index)
-            setSelectedExact(next)
-          }}
-          className="rounded"
-        />
-      ),
-      size: 40,
-    },
-    { accessorKey: 'input_name', header: 'Import Name' },
-    { accessorKey: 'existing_name', header: 'Existing Name' },
-    { accessorKey: 'input_country', header: 'Country' },
-    {
-      id: 'similarity',
-      header: 'Similarity',
+      id: 'match',
+      header: 'Match',
       cell: ({ row }) => {
-        const badge = similarityBadge(row.original.similarity_score)
-        return <Badge className={badge.className}>{badge.label} ({Math.round(row.original.similarity_score * 100)}%)</Badge>
+        if (!row.original.checked) return <span className="text-xs text-muted-foreground">--</span>
+        if (row.original.matchType === 'new') return <Badge className="bg-green-500/15 text-green-400 text-[10px]">New</Badge>
+        if (row.original.matchType === 'exact') return <Badge className="bg-red-500/15 text-red-400 text-[10px]">Exact</Badge>
+        if (row.original.matchType === 'similar') return (
+          <Badge className="bg-yellow-500/15 text-yellow-400 text-[10px]">
+            ~{Math.round((row.original.matchSimilarity ?? 0) * 100)}%
+          </Badge>
+        )
+        return '-'
       },
+      size: 80,
     },
     {
-      id: 'compare',
-      header: '',
-      cell: ({ row }) => (
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={(e) => { e.stopPropagation(); setCompareItem(row.original); setCompareOpen(true) }}
-        >
-          <Eye className="w-4 h-4" />
-        </Button>
-      ),
-      size: 50,
+      id: 'completeness',
+      header: 'Comp.',
+      cell: ({ row }) => {
+        const { filled, total } = row.original.completeness
+        const pct = Math.round((filled / total) * 100)
+        return (
+          <div className="flex items-center gap-1.5 min-w-[70px]">
+            <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+              <div
+                className={cn(
+                  'h-full rounded-full',
+                  filled === total ? 'bg-green-400' : filled >= 8 ? 'bg-yellow-400' : 'bg-red-400'
+                )}
+                style={{ width: `${pct}%` }}
+              />
+            </div>
+            <span className="text-[10px] text-muted-foreground">{filled}/{total}</span>
+          </div>
+        )
+      },
+      size: 90,
+      sortingFn: (rowA, rowB) => rowA.original.completeness.filled - rowB.original.completeness.filled,
+      enableSorting: true,
     },
-  ], [selectedExact, previewExact])
-
-  const similarColumns = useMemo<ColumnDef<PreviewResult>[]>(() => [
     {
       id: 'action',
       header: 'Action',
-      cell: ({ row }) => (
-        <Select
-          value={similarActions.get(row.original.input_index) ?? 'skip'}
-          onValueChange={(val) => {
-            const next = new Map(similarActions)
-            next.set(row.original.input_index, val)
-            setSimilarActions(next)
-          }}
-        >
-          <SelectTrigger className="w-[140px] h-8 text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="skip">Skip</SelectItem>
-            <SelectItem value="import">Import as New</SelectItem>
-            <SelectItem value="merge">Merge</SelectItem>
-          </SelectContent>
-        </Select>
-      ),
-      size: 160,
-    },
-    { accessorKey: 'input_name', header: 'Import Name' },
-    { accessorKey: 'existing_name', header: 'Existing Name' },
-    { accessorKey: 'input_country', header: 'Country' },
-    {
-      id: 'score',
-      header: 'Score',
       cell: ({ row }) => {
-        const badge = similarityBadge(row.original.similarity_score)
-        return <Badge className={badge.className}>{Math.round(row.original.similarity_score * 100)}%</Badge>
+        if (!row.original.checked || row.original.matchType === 'new') return null
+        if (row.original.matchType === 'exact' || row.original.matchType === 'similar') {
+          return (
+            <Select
+              value={row.original.action ?? ''}
+              onValueChange={(val) => setRowAction(row.original.index, val as WorkbenchRow['action'])}
+            >
+              <SelectTrigger className="w-[110px] h-7 text-[10px]">
+                <SelectValue placeholder="Choose..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="import">Import New</SelectItem>
+                <SelectItem value="merge">Merge</SelectItem>
+                <SelectItem value="skip">Skip</SelectItem>
+              </SelectContent>
+            </Select>
+          )
+        }
+        return null
       },
+      size: 130,
     },
-    {
-      id: 'compare',
-      header: '',
-      cell: ({ row }) => (
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={(e) => { e.stopPropagation(); setCompareItem(row.original); setCompareOpen(true) }}
-        >
-          <Eye className="w-4 h-4" />
-        </Button>
-      ),
-      size: 50,
-    },
-  ], [similarActions])
+  ], [setRowAction])
 
   const verifyColumns = useMemo<ColumnDef<UnverifiedResort>[]>(() => [
     {
@@ -851,6 +1001,36 @@ export function BulkImportPage() {
     { accessorKey: 'lifts', header: 'Lifts', cell: ({ row }) => row.original.lifts ?? '-' },
     { accessorKey: 'runs', header: 'Runs', cell: ({ row }) => row.original.runs ?? '-' },
     {
+      id: 'completeness',
+      header: 'Completeness',
+      cell: ({ row }) => {
+        const { filled, total, color } = getVerifyCompleteness(row.original)
+        const pct = Math.round((filled / total) * 100)
+        return (
+          <div className="flex items-center gap-2 min-w-[120px]">
+            <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+              <div
+                className={cn(
+                  'h-full rounded-full transition-all',
+                  filled === total ? 'bg-green-400' : filled >= 10 ? 'bg-yellow-400' : 'bg-red-400'
+                )}
+                style={{ width: `${pct}%` }}
+              />
+            </div>
+            <span className={cn('text-xs font-medium whitespace-nowrap', color)}>
+              {filled}/{total}
+            </span>
+          </div>
+        )
+      },
+      sortingFn: (rowA, rowB) => {
+        const a = getVerifyCompleteness(rowA.original).filled
+        const b = getVerifyCompleteness(rowB.original).filled
+        return a - b
+      },
+      enableSorting: true,
+    },
+    {
       accessorKey: 'verification_notes',
       header: 'Notes',
       cell: ({ row }) => row.original.verification_notes
@@ -871,7 +1051,7 @@ export function BulkImportPage() {
         <Tabs value={topTab} onValueChange={(v) => setTopTab(v as TopTab)}>
           <TabsList className="mb-6">
             <TabsTrigger value="import" className="gap-2">
-              <Upload className="w-4 h-4" /> Import Wizard
+              <Upload className="w-4 h-4" /> Import Workbench
             </TabsTrigger>
             <TabsTrigger value="verification" className="gap-2">
               <ShieldCheck className="w-4 h-4" /> Verification Queue
@@ -887,30 +1067,18 @@ export function BulkImportPage() {
           </TabsList>
 
           {/* ============================================================= */}
-          {/* IMPORT WIZARD TAB                                             */}
+          {/* IMPORT WORKBENCH TAB                                          */}
           {/* ============================================================= */}
           <TabsContent value="import">
-            {/* STEP: UPLOAD */}
-            {step === 'upload' && (
+            {/* No data loaded — show upload zone */}
+            {workbenchRows.length === 0 && !pushResults && (
               <div className="space-y-6">
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <StatsCard label="Total Rows" value={parsedRows.length + parseErrors.length} />
-                  <StatsCard label="Valid Rows" value={parsedRows.length} />
-                  <StatsCard label="Missing Fields" value={parseErrors.length} />
-                </div>
-
                 {/* Drop zone */}
                 <div
-                  onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
-                  onDragLeave={() => setDragOver(false)}
+                  onDragOver={(e) => { e.preventDefault() }}
                   onDrop={handleDrop}
                   onClick={() => fileInputRef.current?.click()}
-                  className={cn(
-                    'border-2 border-dashed rounded-xl p-12 text-center cursor-pointer transition-colors',
-                    dragOver
-                      ? 'border-primary bg-primary/5'
-                      : 'border-border hover:border-primary/50 hover:bg-card/50'
-                  )}
+                  className="border-2 border-dashed rounded-xl p-12 text-center cursor-pointer transition-colors border-border hover:border-primary/50 hover:bg-card/50"
                 >
                   <Upload className="w-10 h-10 mx-auto mb-3 text-muted-foreground" />
                   <p className="text-sm font-medium">Drop JSON or CSV file here</p>
@@ -930,218 +1098,499 @@ export function BulkImportPage() {
                   <div className="flex items-center gap-3 bg-card border border-border rounded-lg px-4 py-3">
                     <FileJson className="w-5 h-5 text-primary shrink-0" />
                     <span className="text-sm font-medium">{fileName}</span>
-                    <span className="text-xs text-muted-foreground">{parsedRows.length} valid rows</span>
-                    <button onClick={clearFile} className="ml-auto p-1 hover:text-destructive transition-colors">
+                    <button onClick={clearWorkbench} className="ml-auto p-1 hover:text-destructive transition-colors">
                       <X className="w-4 h-4" />
                     </button>
                   </div>
                 )}
 
-                {/* Validation errors */}
+                {/* Parse errors */}
                 {parseErrors.length > 0 && (
                   <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-4">
                     <div className="flex items-center gap-2 mb-2">
                       <AlertTriangle className="w-4 h-4 text-yellow-400" />
                       <span className="text-sm font-medium text-yellow-400">
-                        {parseErrors.length} row{parseErrors.length === 1 ? '' : 's'} with issues (will be skipped)
+                        {parseErrors.length} row{parseErrors.length === 1 ? '' : 's'} skipped during parse
                       </span>
                     </div>
                     <ScrollArea className="max-h-40">
                       <ul className="text-xs text-muted-foreground space-y-1">
-                        {parseErrors.slice(0, 50).map((err, i) => (
-                          <li key={i}>{err}</li>
-                        ))}
-                        {parseErrors.length > 50 && (
-                          <li className="text-yellow-400">... and {parseErrors.length - 50} more</li>
-                        )}
+                        {parseErrors.slice(0, 50).map((err, i) => <li key={i}>{err}</li>)}
+                        {parseErrors.length > 50 && <li className="text-yellow-400">... and {parseErrors.length - 50} more</li>}
                       </ul>
                     </ScrollArea>
                   </div>
                 )}
-
-                {/* Proceed button */}
-                <div className="flex justify-end">
-                  <Button
-                    onClick={runPreview}
-                    disabled={parsedRows.length === 0 || previewLoading}
-                    className="gap-2"
-                  >
-                    {previewLoading ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        Previewing{previewProgress.total > 1 ? ` (batch ${previewProgress.batch}/${previewProgress.total})` : ''}...
-                      </>
-                    ) : (
-                      <>
-                        Proceed to Preview
-                        <ArrowRight className="w-4 h-4" />
-                      </>
-                    )}
-                  </Button>
-                </div>
               </div>
             )}
 
-            {/* STEP: PREVIEW */}
-            {step === 'preview' && (
-              <div className="space-y-6">
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <StatsCard label="New Resorts" value={previewNew.length} change="Ready to import" />
-                  <StatsCard label="Exact Matches" value={previewExact.length} change="Already in database" />
-                  <StatsCard label="Similar Matches" value={previewSimilar.length} change="Needs review" />
-                </div>
+            {/* Data loaded — show workbench */}
+            {workbenchRows.length > 0 && !pushResults && (
+              <div className="space-y-4">
+                {/* Status bar */}
+                <div className="flex items-center gap-4 bg-card border border-border rounded-xl px-5 py-3">
+                  <div className="flex items-center gap-3 flex-1">
+                    <button
+                      onClick={() => setStatusFilter('all')}
+                      className={cn('flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-md transition-colors',
+                        statusFilter === 'all' ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground'
+                      )}
+                    >
+                      <CircleDot className="w-3 h-3" /> All ({counts.total})
+                    </button>
+                    <button
+                      onClick={() => setStatusFilter('error')}
+                      className={cn('flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-md transition-colors',
+                        statusFilter === 'error' ? 'bg-red-400/10 text-red-400' : 'text-muted-foreground hover:text-foreground'
+                      )}
+                    >
+                      <XCircle className="w-3 h-3" /> Errors ({counts.errors})
+                    </button>
+                    <button
+                      onClick={() => setStatusFilter('warning')}
+                      className={cn('flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-md transition-colors',
+                        statusFilter === 'warning' ? 'bg-yellow-400/10 text-yellow-400' : 'text-muted-foreground hover:text-foreground'
+                      )}
+                    >
+                      <AlertTriangle className="w-3 h-3" /> Warnings ({counts.warnings})
+                    </button>
+                    <button
+                      onClick={() => setStatusFilter('ready')}
+                      className={cn('flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-md transition-colors',
+                        statusFilter === 'ready' ? 'bg-green-400/10 text-green-400' : 'text-muted-foreground hover:text-foreground'
+                      )}
+                    >
+                      <CheckCircle2 className="w-3 h-3" /> Ready ({counts.ready})
+                    </button>
+                    <button
+                      onClick={() => setStatusFilter('skipped')}
+                      className={cn('flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-md transition-colors',
+                        statusFilter === 'skipped' ? 'bg-slate-400/10 text-slate-400' : 'text-muted-foreground hover:text-foreground'
+                      )}
+                    >
+                      <SkipForward className="w-3 h-3" /> Skipped ({counts.skipped})
+                    </button>
+                  </div>
 
-                <div className="flex items-center justify-between">
-                  <Button variant="outline" onClick={() => setStep('upload')} className="gap-2">
-                    <ArrowLeft className="w-4 h-4" /> Back to Upload
-                  </Button>
-                </div>
-
-                <Tabs value={previewTab} onValueChange={setPreviewTab}>
-                  <TabsList>
-                    <TabsTrigger value="new" className="gap-1">
-                      New <Badge className="bg-green-500/15 text-green-400 ml-1">{previewNew.length}</Badge>
-                    </TabsTrigger>
-                    <TabsTrigger value="exact" className="gap-1">
-                      Exact <Badge className="bg-yellow-500/15 text-yellow-400 ml-1">{previewExact.length}</Badge>
-                    </TabsTrigger>
-                    <TabsTrigger value="similar" className="gap-1">
-                      Similar <Badge className="bg-orange-500/15 text-orange-400 ml-1">{previewSimilar.length}</Badge>
-                    </TabsTrigger>
-                  </TabsList>
-
-                  <TabsContent value="new">
-                    <div className="text-xs text-muted-foreground mb-2">
-                      {selectedNew.size} of {previewNew.length} selected for import
-                    </div>
-                    <DataTable columns={newColumns} data={previewNew} pageSize={20} />
-                  </TabsContent>
-
-                  <TabsContent value="exact">
-                    <div className="text-xs text-muted-foreground mb-2">
-                      {selectedExact.size} of {previewExact.length} selected for update
-                    </div>
-                    <DataTable columns={exactColumns} data={previewExact} pageSize={20} />
-                  </TabsContent>
-
-                  <TabsContent value="similar">
-                    <div className="text-xs text-muted-foreground mb-2">
-                      Review each match and choose an action
-                    </div>
-                    <DataTable columns={similarColumns} data={previewSimilar} pageSize={20} />
-                  </TabsContent>
-                </Tabs>
-
-                <div className="flex justify-end">
-                  <Button onClick={() => setStep('review')} className="gap-2">
-                    Proceed to Review <ArrowRight className="w-4 h-4" />
-                  </Button>
-                </div>
-              </div>
-            )}
-
-            {/* STEP: REVIEW */}
-            {step === 'review' && (
-              <div className="space-y-6">
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <StatsCard label="Importing New" value={reviewCounts.newCount} />
-                  <StatsCard label="Updating Existing" value={reviewCounts.updateCount} />
-                  <StatsCard label="Skipping" value={reviewCounts.skipCount} />
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <Button variant="outline" onClick={() => setStep('preview')} className="gap-2">
-                    <ArrowLeft className="w-4 h-4" /> Back to Preview
-                  </Button>
-                </div>
-
-                <div className="bg-card border border-border rounded-xl p-6 space-y-4">
-                  <h3 className="text-sm font-semibold">Import Summary</h3>
-                  <ul className="text-sm text-muted-foreground space-y-1">
-                    <li>{reviewCounts.newCount} new resorts will be inserted (verified: false)</li>
-                    <li>{reviewCounts.updateCount} existing resorts will have fields updated</li>
-                    <li>{reviewCounts.skipCount} rows skipped</li>
-                  </ul>
-                </div>
-
-                <div className="bg-card border border-border rounded-xl p-6 space-y-4">
-                  <h3 className="text-sm font-semibold">Placeholder Images</h3>
-                  <label className="flex items-center gap-2 text-sm cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={assignPlaceholders}
-                      onChange={(e) => setAssignPlaceholders(e.target.checked)}
-                      className="rounded"
-                    />
-                    Assign random placeholder images to new resorts
-                  </label>
-                  {assignPlaceholders && (
-                    <div>
-                      <Label className="text-xs text-muted-foreground mb-1 block">Placeholder URLs (one per line)</Label>
-                      <textarea
-                        value={placeholderUrlsText}
-                        onChange={(e) => setPlaceholderUrlsText(e.target.value)}
-                        rows={5}
-                        className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs font-mono placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring resize-y"
-                        placeholder="https://photos.slopestory.com/resorts/placeholders/mountain-01.jpg"
-                      />
-                    </div>
-                  )}
-                </div>
-
-                <label className="flex items-center gap-2 text-sm cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={confirmChecked}
-                    onChange={(e) => setConfirmChecked(e.target.checked)}
-                    className="rounded"
-                  />
-                  I understand this will import {reviewCounts.newCount} resorts as unverified
-                </label>
-
-                <div className="flex justify-end gap-3">
-                  <Button variant="outline" onClick={resetWizard}>Cancel</Button>
-                  <Button
-                    onClick={() => setConfirmDialogOpen(true)}
-                    disabled={!confirmChecked || (reviewCounts.newCount === 0 && reviewCounts.updateCount === 0)}
-                    className="gap-2"
-                  >
-                    Start Import <ArrowRight className="w-4 h-4" />
-                  </Button>
-                </div>
-
-                <ConfirmDialog
-                  open={confirmDialogOpen}
-                  onOpenChange={setConfirmDialogOpen}
-                  title="Start Bulk Import"
-                  description={`This will insert ${reviewCounts.newCount} new resorts and update ${reviewCounts.updateCount} existing resorts. All new resorts will be imported as unverified. This action cannot be easily undone.`}
-                  confirmLabel="Start Import"
-                  onConfirm={executeImport}
-                />
-              </div>
-            )}
-
-            {/* STEP: IMPORTING */}
-            {step === 'importing' && (
-              <div className="space-y-6">
-                <div className="bg-card border border-border rounded-xl p-8 text-center">
-                  <Loader2 className="w-10 h-10 animate-spin text-primary mx-auto mb-4" />
-                  <p className="text-sm font-medium mb-2">Importing resorts...</p>
-                  <p className="text-xs text-muted-foreground mb-4">
-                    Batch {importProgress.batch} of {importProgress.total}
-                  </p>
-                  <div className="w-full max-w-md mx-auto bg-muted rounded-full h-2 overflow-hidden">
-                    <div
-                      className="bg-primary h-full rounded-full transition-all duration-300"
-                      style={{ width: `${importProgress.total ? (importProgress.batch / importProgress.total) * 100 : 0}%` }}
-                    />
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={checkAgainstDB}
+                      disabled={dbCheckLoading || counts.errors > 0}
+                      className="gap-1.5"
+                    >
+                      {dbCheckLoading ? (
+                        <><Loader2 className="w-3 h-3 animate-spin" /> Checking{dbCheckProgress.total > 1 ? ` ${dbCheckProgress.batch}/${dbCheckProgress.total}` : ''}...</>
+                      ) : (
+                        <><Database className="w-3 h-3" /> Check Against DB</>
+                      )}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={clearWorkbench}
+                      className="gap-1.5"
+                    >
+                      <X className="w-3 h-3" /> Clear
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={() => setPushConfirmOpen(true)}
+                      disabled={!canPush}
+                      className="gap-1.5"
+                    >
+                      {pushLoading ? (
+                        <><Loader2 className="w-3 h-3 animate-spin" /> Pushing{pushProgress.total > 1 ? ` ${pushProgress.batch}/${pushProgress.total}` : ''}...</>
+                      ) : (
+                        <><Upload className="w-3 h-3" /> Push to DB ({counts.ready})</>
+                      )}
+                    </Button>
                   </div>
                 </div>
+
+                {/* Workbench grid */}
+                <DataTable
+                  columns={workbenchColumns}
+                  data={filteredRows}
+                  pageSize={30}
+                  onRowClick={(row) => setSelectedRowIndex(row.index)}
+                />
+
+                {/* Detail panel — shows when a row is selected */}
+                {selectedRow && (
+                  <div className="bg-card border border-border rounded-xl p-5 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        {statusIcon(selectedRow.status)}
+                        <h3 className="text-sm font-semibold">{selectedRow.data.name || '(unnamed)'}</h3>
+                        <span className="text-xs text-muted-foreground">Row {selectedRow.index + 1}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {selectedRow.status !== 'skipped' && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setRowAction(selectedRow.index, 'skip')}
+                            className="gap-1"
+                          >
+                            <SkipForward className="w-3 h-3" /> Skip Row
+                          </Button>
+                        )}
+                        {selectedRow.status === 'skipped' && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setRowAction(selectedRow.index, null)}
+                            className="gap-1"
+                          >
+                            <RefreshCw className="w-3 h-3" /> Unskip
+                          </Button>
+                        )}
+                        <Button variant="ghost" size="sm" onClick={() => setSelectedRowIndex(null)}>
+                          <X className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                      {/* Left: Issues + Match info */}
+                      <div className="space-y-3">
+                        {selectedRow.errors.length > 0 && (
+                          <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3 space-y-1">
+                            <span className="text-xs font-medium text-red-400">Errors</span>
+                            {selectedRow.errors.map((e, i) => (
+                              <div key={i} className="flex items-center gap-2 text-xs">
+                                <XCircle className="w-3 h-3 text-red-400 shrink-0" />
+                                <span><strong>{e.field}:</strong> {e.message}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {selectedRow.warnings.length > 0 && (
+                          <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3 space-y-1">
+                            <span className="text-xs font-medium text-yellow-400">Warnings</span>
+                            {selectedRow.warnings.map((w, i) => (
+                              <div key={i} className="flex items-center gap-2 text-xs">
+                                <AlertTriangle className="w-3 h-3 text-yellow-400 shrink-0" />
+                                <span><strong>{w.field}:</strong> {w.message}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {selectedRow.checked && selectedRow.matchType && selectedRow.matchType !== 'new' && (
+                          <div className="bg-card border border-border rounded-lg p-3 space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-medium">
+                                {selectedRow.matchType === 'exact' ? 'Exact Match' : 'Similar Match'}
+                                {selectedRow.matchSimilarity && ` (${Math.round(selectedRow.matchSimilarity * 100)}%)`}
+                              </span>
+                              {selectedRow.matchedData && (
+                                <Button variant="ghost" size="sm" onClick={() => setCompareOpen(true)} className="gap-1 h-6">
+                                  <Eye className="w-3 h-3" /> Compare
+                                </Button>
+                              )}
+                            </div>
+                            <p className="text-xs text-muted-foreground">
+                              Matches: <strong>{selectedRow.matchedResortName}</strong>
+                            </p>
+                            <div className="flex gap-2">
+                              <Button
+                                size="sm"
+                                variant={selectedRow.action === 'import' ? 'default' : 'outline'}
+                                onClick={() => setRowAction(selectedRow.index, 'import')}
+                                className="h-7 text-xs"
+                              >
+                                Import New
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant={selectedRow.action === 'merge' ? 'default' : 'outline'}
+                                onClick={() => setRowAction(selectedRow.index, 'merge')}
+                                className="h-7 text-xs"
+                              >
+                                Merge
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant={selectedRow.action === 'skip' ? 'default' : 'outline'}
+                                onClick={() => setRowAction(selectedRow.index, 'skip')}
+                                className="h-7 text-xs"
+                              >
+                                Skip
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+
+                        {selectedRow.checked && selectedRow.matchType === 'new' && (
+                          <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-3">
+                            <span className="text-xs font-medium text-green-400">No duplicates found — will be imported as new resort</span>
+                          </div>
+                        )}
+
+                        {!selectedRow.checked && (
+                          <div className="bg-slate-500/10 border border-slate-500/20 rounded-lg p-3">
+                            <span className="text-xs text-muted-foreground">Click "Check Against DB" to find duplicates</span>
+                          </div>
+                        )}
+
+                        {selectedRow.isDirty && selectedRow.checked && (
+                          <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3">
+                            <span className="text-xs text-yellow-400">Row edited after DB check — re-check recommended</span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Right: Edit form */}
+                      <div className="space-y-3">
+                        <span className="text-xs font-medium text-muted-foreground">Edit Fields</span>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <Label className="text-[10px]">Name *</Label>
+                            <Input
+                              value={selectedRow.data.name}
+                              onChange={(e) => updateRowField(selectedRow.index, 'name', e.target.value)}
+                              className="h-8 text-xs"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-[10px]">Country *</Label>
+                            <Input
+                              value={selectedRow.data.country}
+                              onChange={(e) => updateRowField(selectedRow.index, 'country', e.target.value)}
+                              className="h-8 text-xs"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-[10px]">Country Code *</Label>
+                            <Input
+                              value={selectedRow.data.country_code}
+                              onChange={(e) => updateRowField(selectedRow.index, 'country_code', e.target.value.toUpperCase())}
+                              className="h-8 text-xs"
+                              maxLength={2}
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-[10px]">Region</Label>
+                            <Input
+                              value={selectedRow.data.region ?? ''}
+                              onChange={(e) => updateRowField(selectedRow.index, 'region', e.target.value || undefined)}
+                              className="h-8 text-xs"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-[10px]">Latitude *</Label>
+                            <Input
+                              type="number"
+                              step="any"
+                              value={selectedRow.data.lat}
+                              onChange={(e) => updateRowField(selectedRow.index, 'lat', Number(e.target.value))}
+                              className="h-8 text-xs"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-[10px]">Longitude *</Label>
+                            <Input
+                              type="number"
+                              step="any"
+                              value={selectedRow.data.lng}
+                              onChange={(e) => updateRowField(selectedRow.index, 'lng', Number(e.target.value))}
+                              className="h-8 text-xs"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-[10px]">Vertical (m)</Label>
+                            <Input
+                              type="number"
+                              value={selectedRow.data.vertical_m ?? ''}
+                              onChange={(e) => updateRowField(selectedRow.index, 'vertical_m', e.target.value ? Number(e.target.value) : undefined)}
+                              className="h-8 text-xs"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-[10px]">Runs</Label>
+                            <Input
+                              type="number"
+                              value={selectedRow.data.runs ?? ''}
+                              onChange={(e) => updateRowField(selectedRow.index, 'runs', e.target.value ? Number(e.target.value) : undefined)}
+                              className="h-8 text-xs"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-[10px]">Lifts</Label>
+                            <Input
+                              type="number"
+                              value={selectedRow.data.lifts ?? ''}
+                              onChange={(e) => updateRowField(selectedRow.index, 'lifts', e.target.value ? Number(e.target.value) : undefined)}
+                              className="h-8 text-xs"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-[10px]">Snowfall (cm/yr)</Label>
+                            <Input
+                              type="number"
+                              value={selectedRow.data.annual_snowfall_cm ?? ''}
+                              onChange={(e) => updateRowField(selectedRow.index, 'annual_snowfall_cm', e.target.value ? Number(e.target.value) : undefined)}
+                              className="h-8 text-xs"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-[10px]">Beginner %</Label>
+                            <Input
+                              type="number"
+                              value={selectedRow.data.beginner_pct ?? ''}
+                              onChange={(e) => updateRowField(selectedRow.index, 'beginner_pct', e.target.value ? Number(e.target.value) : undefined)}
+                              className="h-8 text-xs"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-[10px]">Intermediate %</Label>
+                            <Input
+                              type="number"
+                              value={selectedRow.data.intermediate_pct ?? ''}
+                              onChange={(e) => updateRowField(selectedRow.index, 'intermediate_pct', e.target.value ? Number(e.target.value) : undefined)}
+                              className="h-8 text-xs"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-[10px]">Advanced %</Label>
+                            <Input
+                              type="number"
+                              value={selectedRow.data.advanced_pct ?? ''}
+                              onChange={(e) => updateRowField(selectedRow.index, 'advanced_pct', e.target.value ? Number(e.target.value) : undefined)}
+                              className="h-8 text-xs"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-[10px]">Season Open</Label>
+                            <Input
+                              value={selectedRow.data.season_open ?? ''}
+                              onChange={(e) => updateRowField(selectedRow.index, 'season_open', e.target.value || undefined)}
+                              className="h-8 text-xs"
+                              placeholder="e.g. Nov 15"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-[10px]">Season Close</Label>
+                            <Input
+                              value={selectedRow.data.season_close ?? ''}
+                              onChange={(e) => updateRowField(selectedRow.index, 'season_close', e.target.value || undefined)}
+                              className="h-8 text-xs"
+                              placeholder="e.g. Apr 15"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-[10px]">Night Skiing</Label>
+                            <Select
+                              value={selectedRow.data.has_night_skiing === true ? 'true' : selectedRow.data.has_night_skiing === false ? 'false' : ''}
+                              onValueChange={(val) => updateRowField(selectedRow.index, 'has_night_skiing', val === '' ? undefined : val === 'true')}
+                            >
+                              <SelectTrigger className="h-8 text-xs">
+                                <SelectValue placeholder="--" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="">Unknown</SelectItem>
+                                <SelectItem value="true">Yes</SelectItem>
+                                <SelectItem value="false">No</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div>
+                            <Label className="text-[10px]">Website</Label>
+                            <Input
+                              value={selectedRow.data.website ?? ''}
+                              onChange={(e) => updateRowField(selectedRow.index, 'website', e.target.value || undefined)}
+                              className="h-8 text-xs"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-[10px]">Pass Affiliation</Label>
+                            <Input
+                              value={selectedRow.data.pass_affiliation ?? ''}
+                              onChange={(e) => updateRowField(selectedRow.index, 'pass_affiliation', e.target.value || undefined)}
+                              className="h-8 text-xs"
+                              placeholder="epic, ikon, etc."
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-[10px]">Instagram</Label>
+                            <Input
+                              value={selectedRow.data.instagram_handle ?? ''}
+                              onChange={(e) => updateRowField(selectedRow.index, 'instagram_handle', e.target.value || undefined)}
+                              className="h-8 text-xs"
+                              placeholder="without @"
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <Label className="text-[10px]">Description</Label>
+                          <textarea
+                            value={selectedRow.data.description ?? ''}
+                            onChange={(e) => updateRowField(selectedRow.index, 'description', e.target.value || undefined)}
+                            rows={3}
+                            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring resize-y mt-1"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Push confirm dialog */}
+                <ConfirmDialog
+                  open={pushConfirmOpen}
+                  onOpenChange={setPushConfirmOpen}
+                  title="Push to Database"
+                  description={`This will import ${counts.ready} resort${counts.ready === 1 ? '' : 's'} as unverified. Placeholder images will be auto-assigned from R2. This action cannot be easily undone.`}
+                  confirmLabel="Push to DB"
+                  onConfirm={pushToDB}
+                />
+
+                {/* Comparison dialog */}
+                {selectedRow?.matchedData && (
+                  <Dialog open={compareOpen} onOpenChange={setCompareOpen}>
+                    <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+                      <DialogHeader>
+                        <DialogTitle>Compare Import vs Existing</DialogTitle>
+                        <DialogDescription>
+                          {selectedRow.data.name} vs {selectedRow.matchedResortName}
+                        </DialogDescription>
+                      </DialogHeader>
+                      <div className="grid grid-cols-2 gap-6 text-sm">
+                        <div>
+                          <h4 className="font-semibold text-primary mb-3">Import Data</h4>
+                          <dl className="space-y-2">
+                            {Object.entries(selectedRow.data).map(([key, value]) => (
+                              <div key={key}>
+                                <dt className="text-xs text-muted-foreground">{key}</dt>
+                                <dd className="text-sm">{value != null ? String(value) : '-'}</dd>
+                              </div>
+                            ))}
+                          </dl>
+                        </div>
+                        <div>
+                          <h4 className="font-semibold text-green-400 mb-3">Existing Data</h4>
+                          <dl className="space-y-2">
+                            {Object.entries(selectedRow.matchedData).map(([key, value]) => (
+                              <div key={key}>
+                                <dt className="text-xs text-muted-foreground">{key}</dt>
+                                <dd className="text-sm">{value != null ? String(value) : '-'}</dd>
+                              </div>
+                            ))}
+                          </dl>
+                        </div>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+                )}
               </div>
             )}
 
-            {/* STEP: DONE */}
-            {step === 'done' && importResults && (
+            {/* Push results */}
+            {pushResults && (
               <div className="space-y-6">
                 <div className="bg-card border border-border rounded-xl p-8 text-center">
                   <CheckCircle2 className="w-12 h-12 text-green-400 mx-auto mb-4" />
@@ -1150,16 +1599,16 @@ export function BulkImportPage() {
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <StatsCard label="Inserted" value={importResults.inserted} />
-                  <StatsCard label="Updated" value={importResults.updated} />
-                  <StatsCard label="Placeholders Assigned" value={importResults.placeholders} />
+                  <StatsCard label="Inserted" value={pushResults.inserted} />
+                  <StatsCard label="Updated" value={pushResults.updated} />
+                  <StatsCard label="Placeholders Assigned" value={pushResults.placeholders} />
                 </div>
 
                 <div className="flex justify-center gap-3">
-                  <Button variant="outline" onClick={resetWizard} className="gap-2">
-                    <Upload className="w-4 h-4" /> Start New Import
+                  <Button variant="outline" onClick={clearWorkbench} className="gap-2">
+                    <Upload className="w-4 h-4" /> New Import
                   </Button>
-                  <Button onClick={() => { setTopTab('verification'); resetWizard() }} className="gap-2">
+                  <Button onClick={() => { setTopTab('verification'); clearWorkbench() }} className="gap-2">
                     <ShieldCheck className="w-4 h-4" /> Go to Verification
                   </Button>
                 </div>
@@ -1198,6 +1647,16 @@ export function BulkImportPage() {
                     className="gap-1"
                   >
                     <AlertTriangle className="w-3 h-3" /> Flag Selected
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    onClick={() => setDeleteDialogOpen(true)}
+                    disabled={verifyLoading || deleteLoading}
+                    className="gap-1"
+                  >
+                    {deleteLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+                    Delete Selected
                   </Button>
                 </div>
               )}
@@ -1265,6 +1724,27 @@ export function BulkImportPage() {
                         )}
                       </div>
 
+                      {/* Completeness indicator */}
+                      {(() => {
+                        const { filled, total, label, color } = getVerifyCompleteness(verifyDialogResort)
+                        const pct = Math.round((filled / total) * 100)
+                        return (
+                          <div className="flex items-center gap-3 text-sm">
+                            <span className="text-muted-foreground">Completeness:</span>
+                            <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden max-w-[150px]">
+                              <div
+                                className={cn(
+                                  'h-full rounded-full',
+                                  filled === total ? 'bg-green-400' : filled >= 10 ? 'bg-yellow-400' : 'bg-red-400'
+                                )}
+                                style={{ width: `${pct}%` }}
+                              />
+                            </div>
+                            <span className={cn('font-medium', color)}>{label} ({filled}/{total})</span>
+                          </div>
+                        )
+                      })()}
+
                       <div>
                         <Label className="text-xs">Verification Notes</Label>
                         <textarea
@@ -1299,6 +1779,42 @@ export function BulkImportPage() {
                   )}
                 </DialogContent>
               </Dialog>
+
+              {/* Delete confirmation dialog */}
+              <ConfirmDialog
+                open={deleteDialogOpen}
+                onOpenChange={setDeleteDialogOpen}
+                title="Delete Selected Resorts"
+                description={`Delete ${selectedVerifyIds.size} resort${selectedVerifyIds.size === 1 ? '' : 's'}? Resorts with user visits, wishlists, or home resort references cannot be deleted. This action cannot be undone.`}
+                confirmLabel="Delete"
+                variant="destructive"
+                onConfirm={handleBulkDelete}
+              />
+
+              {/* Blocked resorts dialog */}
+              <Dialog open={deleteBlockedDialogOpen} onOpenChange={setDeleteBlockedDialogOpen}>
+                <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
+                  <DialogHeader>
+                    <DialogTitle>Some Resorts Could Not Be Deleted</DialogTitle>
+                    <DialogDescription>
+                      {deleteResult
+                        ? `${deleteResult.deleted} resort${deleteResult.deleted === 1 ? ' was' : 's were'} deleted. ${deleteBlockedResorts.length} could not be deleted due to related data.`
+                        : `${deleteBlockedResorts.length} resort${deleteBlockedResorts.length === 1 ? '' : 's'} could not be deleted due to related data.`}
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-2">
+                    {deleteBlockedResorts.map((r) => (
+                      <div key={r.id} className="flex items-start gap-2 text-sm bg-destructive/5 border border-destructive/20 rounded-lg px-3 py-2">
+                        <AlertTriangle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
+                        <div>
+                          <span className="font-medium">{r.name}</span>
+                          <span className="text-muted-foreground ml-1">— {r.reason}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </DialogContent>
+              </Dialog>
             </div>
           </TabsContent>
 
@@ -1320,76 +1836,63 @@ export function BulkImportPage() {
               )}
 
               <div className="bg-card border border-border rounded-xl p-6 space-y-4">
-                <h3 className="text-sm font-semibold">Assign Placeholder Images</h3>
-                <p className="text-xs text-muted-foreground">
-                  Enter placeholder image URLs below (one per line). These will be randomly assigned to resorts without cover images.
-                </p>
-                <textarea
-                  value={placeholderInput}
-                  onChange={(e) => setPlaceholderInput(e.target.value)}
-                  rows={8}
-                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs font-mono placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring resize-y"
-                  placeholder={`https://photos.slopestory.com/resorts/placeholders/mountain-01.jpg\nhttps://photos.slopestory.com/resorts/placeholders/mountain-02.jpg`}
-                />
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-semibold">Available Placeholders</h3>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {placeholdersFetching
+                        ? 'Loading from R2...'
+                        : `${discoveredPlaceholders.length} placeholder image${discoveredPlaceholders.length === 1 ? '' : 's'} discovered in R2`}
+                    </p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => fetchPlaceholderUrls(true)}
+                    disabled={placeholdersFetching}
+                    className="gap-1"
+                  >
+                    {placeholdersFetching && <Loader2 className="w-3 h-3 animate-spin" />}
+                    Refresh
+                  </Button>
+                </div>
+
+                {discoveredPlaceholders.length > 0 && (
+                  <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2">
+                    {discoveredPlaceholders.map((url) => (
+                      <div key={url} className="aspect-[3/2] rounded-lg overflow-hidden border border-border bg-muted">
+                        <img
+                          src={url}
+                          alt=""
+                          className="w-full h-full object-cover"
+                          loading="lazy"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {discoveredPlaceholders.length === 0 && !placeholdersFetching && (
+                  <div className="text-center py-8 text-muted-foreground text-sm">
+                    No placeholder images found in R2 at <code className="text-xs">resorts/placeholders/</code>
+                  </div>
+                )}
+
                 <Button
                   onClick={handleAssignPlaceholders}
-                  disabled={assigningPlaceholders || noCoverCount === 0}
+                  disabled={assigningPlaceholders || noCoverCount === 0 || discoveredPlaceholders.length === 0}
                   className="gap-2"
                 >
                   {assigningPlaceholders ? (
                     <><Loader2 className="w-4 h-4 animate-spin" /> Assigning...</>
                   ) : (
-                    <><ImageIcon className="w-4 h-4" /> Assign Placeholders to {noCoverCount} Resorts</>
+                    <><ImageIcon className="w-4 h-4" /> Assign to {noCoverCount} Resorts</>
                   )}
                 </Button>
               </div>
             </div>
           </TabsContent>
         </Tabs>
-
-        {/* Comparison Dialog */}
-        <Dialog open={compareOpen} onOpenChange={setCompareOpen}>
-          <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>Compare Import vs Existing</DialogTitle>
-              <DialogDescription>Side-by-side comparison of import data and existing database record</DialogDescription>
-            </DialogHeader>
-            {compareItem && (
-              <div className="grid grid-cols-2 gap-6 text-sm">
-                <div>
-                  <h4 className="font-semibold text-primary mb-3">Import Data</h4>
-                  {parsedRows[compareItem.input_index] && (
-                    <dl className="space-y-2">
-                      {Object.entries(parsedRows[compareItem.input_index]).map(([key, value]) => (
-                        <div key={key}>
-                          <dt className="text-xs text-muted-foreground">{key}</dt>
-                          <dd className="text-sm">{value != null ? String(value) : '-'}</dd>
-                        </div>
-                      ))}
-                    </dl>
-                  )}
-                </div>
-                <div>
-                  <h4 className="font-semibold text-green-400 mb-3">Existing Data</h4>
-                  {compareItem.existing_data ? (
-                    <dl className="space-y-2">
-                      {Object.entries(compareItem.existing_data).map(([key, value]) => (
-                        <div key={key}>
-                          <dt className="text-xs text-muted-foreground">{key}</dt>
-                          <dd className="text-sm">{value != null ? String(value) : '-'}</dd>
-                        </div>
-                      ))}
-                    </dl>
-                  ) : (
-                    <p className="text-muted-foreground">
-                      {compareItem.existing_name} ({compareItem.existing_country})
-                    </p>
-                  )}
-                </div>
-              </div>
-            )}
-          </DialogContent>
-        </Dialog>
       </div>
     </div>
   )
