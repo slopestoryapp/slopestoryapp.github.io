@@ -122,6 +122,7 @@ interface UnverifiedResort {
   has_night_skiing: boolean | null
   description: string | null
   budget_tier: string | null
+  instagram_handle: string | null
   cover_image_url: string | null
 }
 
@@ -689,7 +690,7 @@ export function BulkImportPage() {
       const [unverified, verified, total] = await Promise.all([
         supabase
           .from('resorts')
-          .select('id, name, country, country_code, region, lat, lng, website, vertical_m, runs, lifts, verified, verification_notes, pass_affiliation, annual_snowfall_cm, beginner_pct, intermediate_pct, advanced_pct, season_open, season_close, has_night_skiing, description, budget_tier, cover_image_url')
+          .select('id, name, country, country_code, region, lat, lng, website, vertical_m, runs, lifts, verified, verification_notes, pass_affiliation, annual_snowfall_cm, beginner_pct, intermediate_pct, advanced_pct, season_open, season_close, has_night_skiing, description, budget_tier, instagram_handle, cover_image_url')
           .eq('verified', false)
           .order('name')
           .range(from, from + PAGE_SIZE - 1),
@@ -798,6 +799,7 @@ export function BulkImportPage() {
           description: verifyDialogResort.description,
           budget_tier: verifyDialogResort.budget_tier,
           pass_affiliation: verifyDialogResort.pass_affiliation,
+          instagram_handle: verifyDialogResort.instagram_handle,
         })
         .eq('id', verifyDialogResort.id)
       if (error) throw error
@@ -1967,7 +1969,7 @@ export function BulkImportPage() {
                       {/* Other */}
                       <div>
                         <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Other</h4>
-                        <div className="grid grid-cols-3 gap-3">
+                        <div className="grid grid-cols-4 gap-3">
                           <div>
                             <Label className="text-[10px]">Website</Label>
                             <Input
@@ -2002,6 +2004,15 @@ export function BulkImportPage() {
                                 <SelectItem value="luxury">Luxury</SelectItem>
                               </SelectContent>
                             </Select>
+                          </div>
+                          <div>
+                            <Label className="text-[10px]">Instagram</Label>
+                            <Input
+                              value={verifyDialogResort.instagram_handle ?? ''}
+                              onChange={(e) => updateVerifyField('instagram_handle', e.target.value || null)}
+                              className="h-8 text-xs"
+                              placeholder="without @"
+                            />
                           </div>
                         </div>
                         <div className="mt-3">
