@@ -28,6 +28,7 @@ interface DataTableProps<TData, TValue> {
   enableSelection?: boolean
   onRowClick?: (row: TData) => void
   pageSize?: number
+  defaultSorting?: SortingState
   // Server-side pagination
   serverPagination?: {
     totalCount: number
@@ -44,9 +45,10 @@ export function DataTable<TData, TValue>({
   enableSelection = false,
   onRowClick,
   pageSize = 50,
+  defaultSorting,
   serverPagination,
 }: DataTableProps<TData, TValue>) {
-  const [sorting, setSorting] = useState<SortingState>([])
+  const [sorting, setSorting] = useState<SortingState>(defaultSorting ?? [])
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({})
   const [globalFilter, setGlobalFilter] = useState('')

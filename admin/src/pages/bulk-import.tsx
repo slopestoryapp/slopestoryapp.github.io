@@ -1677,6 +1677,7 @@ export function BulkImportPage() {
                     setVerifyDialogOpen(true)
                   }}
                   pageSize={PAGE_SIZE}
+                  defaultSorting={[{ id: 'completeness', desc: true }]}
                   serverPagination={{
                     totalCount: unverifiedTotal,
                     page: unverifiedPage,
