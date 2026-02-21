@@ -1351,7 +1351,7 @@ export function BulkImportPage() {
                           <div>
                             <Label className="text-[10px]">Name *</Label>
                             <Input
-                              value={selectedRow.data.name}
+                              value={selectedRow.data.name ?? ''}
                               onChange={(e) => updateRowField(selectedRow.index, 'name', e.target.value)}
                               className="h-8 text-xs"
                             />
@@ -1359,7 +1359,7 @@ export function BulkImportPage() {
                           <div>
                             <Label className="text-[10px]">Country *</Label>
                             <Input
-                              value={selectedRow.data.country}
+                              value={selectedRow.data.country ?? ''}
                               onChange={(e) => updateRowField(selectedRow.index, 'country', e.target.value)}
                               className="h-8 text-xs"
                             />
@@ -1367,7 +1367,7 @@ export function BulkImportPage() {
                           <div>
                             <Label className="text-[10px]">Country Code *</Label>
                             <Input
-                              value={selectedRow.data.country_code}
+                              value={selectedRow.data.country_code ?? ''}
                               onChange={(e) => updateRowField(selectedRow.index, 'country_code', e.target.value.toUpperCase())}
                               className="h-8 text-xs"
                               maxLength={2}
@@ -1386,7 +1386,7 @@ export function BulkImportPage() {
                             <Input
                               type="number"
                               step="any"
-                              value={selectedRow.data.lat}
+                              value={selectedRow.data.lat ?? ''}
                               onChange={(e) => updateRowField(selectedRow.index, 'lat', Number(e.target.value))}
                               className="h-8 text-xs"
                             />
@@ -1396,7 +1396,7 @@ export function BulkImportPage() {
                             <Input
                               type="number"
                               step="any"
-                              value={selectedRow.data.lng}
+                              value={selectedRow.data.lng ?? ''}
                               onChange={(e) => updateRowField(selectedRow.index, 'lng', Number(e.target.value))}
                               className="h-8 text-xs"
                             />
@@ -1485,14 +1485,14 @@ export function BulkImportPage() {
                           <div>
                             <Label className="text-[10px]">Night Skiing</Label>
                             <Select
-                              value={selectedRow.data.has_night_skiing === true ? 'true' : selectedRow.data.has_night_skiing === false ? 'false' : ''}
-                              onValueChange={(val) => updateRowField(selectedRow.index, 'has_night_skiing', val === '' ? undefined : val === 'true')}
+                              value={selectedRow.data.has_night_skiing === true ? 'true' : selectedRow.data.has_night_skiing === false ? 'false' : 'unknown'}
+                              onValueChange={(val) => updateRowField(selectedRow.index, 'has_night_skiing', val === 'unknown' ? undefined : val === 'true')}
                             >
                               <SelectTrigger className="h-8 text-xs">
                                 <SelectValue placeholder="--" />
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="">Unknown</SelectItem>
+                                <SelectItem value="unknown">Unknown</SelectItem>
                                 <SelectItem value="true">Yes</SelectItem>
                                 <SelectItem value="false">No</SelectItem>
                               </SelectContent>
