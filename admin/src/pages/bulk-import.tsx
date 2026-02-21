@@ -975,6 +975,7 @@ export function BulkImportPage() {
     {
       id: 'completeness',
       header: 'Comp.',
+      accessorFn: (row) => row.completeness.filled,
       cell: ({ row }) => {
         const { filled, total } = row.original.completeness
         const pct = Math.round((filled / total) * 100)
@@ -994,7 +995,6 @@ export function BulkImportPage() {
         )
       },
       size: 90,
-      sortingFn: (rowA, rowB) => rowA.original.completeness.filled - rowB.original.completeness.filled,
       enableSorting: true,
     },
     {
@@ -1063,6 +1063,7 @@ export function BulkImportPage() {
     {
       id: 'completeness',
       header: 'Completeness',
+      accessorFn: (row) => getVerifyCompleteness(row).filled,
       cell: ({ row }) => {
         const { filled, total, color } = getVerifyCompleteness(row.original)
         const pct = Math.round((filled / total) * 100)
@@ -1082,11 +1083,6 @@ export function BulkImportPage() {
             </span>
           </div>
         )
-      },
-      sortingFn: (rowA, rowB) => {
-        const a = getVerifyCompleteness(rowA.original).filled
-        const b = getVerifyCompleteness(rowB.original).filled
-        return a - b
       },
       enableSorting: true,
     },
