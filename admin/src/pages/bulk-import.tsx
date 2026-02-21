@@ -345,6 +345,8 @@ export function BulkImportPage() {
   const [verifyDialogOpen, setVerifyDialogOpen] = useState(false)
   const [verifyDialogResort, setVerifyDialogResort] = useState<UnverifiedResort | null>(null)
   const [verifyNotes, setVerifyNotes] = useState('')
+  const [verifySaving, setVerifySaving] = useState(false)
+  const [verifyDirty, setVerifyDirty] = useState(false)
   const [deleteLoading, setDeleteLoading] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [deleteBlockedDialogOpen, setDeleteBlockedDialogOpen] = useState(false)
@@ -763,6 +765,62 @@ export function BulkImportPage() {
       setVerifyLoading(false)
     }
   }, [loadUnverified, log])
+
+  const updateVerifyField = useCallback(<K extends keyof UnverifiedResort>(field: K, value: UnverifiedResort[K]) => {
+    setVerifyDialogResort(prev => prev ? { ...prev, [field]: value } : prev)
+    setVerifyDirty(true)
+  }, [])
+
+  const handleSaveResortFields = useCallback(async (thenVerify?: { verified: boolean; notes: string }) => {
+    if (!verifyDialogResort) return
+    setVerifySaving(true)
+    try {
+      const { error } = await supabase
+        .from('resorts')
+        .update({
+          name: verifyDialogResort.name,
+          country: verifyDialogResort.country,
+          country_code: verifyDialogResort.country_code,
+          region: verifyDialogResort.region,
+          lat: verifyDialogResort.lat,
+          lng: verifyDialogResort.lng,
+          website: verifyDialogResort.website,
+          vertical_m: verifyDialogResort.vertical_m,
+          runs: verifyDialogResort.runs,
+          lifts: verifyDialogResort.lifts,
+          annual_snowfall_cm: verifyDialogResort.annual_snowfall_cm,
+          beginner_pct: verifyDialogResort.beginner_pct,
+          intermediate_pct: verifyDialogResort.intermediate_pct,
+          advanced_pct: verifyDialogResort.advanced_pct,
+          season_open: verifyDialogResort.season_open,
+          season_close: verifyDialogResort.season_close,
+          has_night_skiing: verifyDialogResort.has_night_skiing,
+          description: verifyDialogResort.description,
+          budget_tier: verifyDialogResort.budget_tier,
+          pass_affiliation: verifyDialogResort.pass_affiliation,
+        })
+        .eq('id', verifyDialogResort.id)
+      if (error) throw error
+      setVerifyDirty(false)
+      setUnverifiedResorts(prev => prev.map(r => r.id === verifyDialogResort.id ? { ...verifyDialogResort } : r))
+      await log({
+        action: 'update_resort_fields',
+        entity_type: 'resort',
+        entity_id: verifyDialogResort.id,
+      })
+
+      if (thenVerify) {
+        setVerifySaving(false)
+        await handleSingleVerify(verifyDialogResort.id, thenVerify.verified, thenVerify.notes)
+        return
+      }
+      toast.success('Resort fields saved')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to save')
+    } finally {
+      setVerifySaving(false)
+    }
+  }, [verifyDialogResort, handleSingleVerify, log])
 
   const handleBulkDelete = useCallback(async () => {
     if (selectedVerifyIds.size === 0) return
@@ -1672,8 +1730,9 @@ export function BulkImportPage() {
                   columns={verifyColumns}
                   data={unverifiedResorts}
                   onRowClick={(row) => {
-                    setVerifyDialogResort(row)
+                    setVerifyDialogResort({ ...row })
                     setVerifyNotes(row.verification_notes ?? '')
+                    setVerifyDirty(false)
                     setVerifyDialogOpen(true)
                   }}
                   pageSize={PAGE_SIZE}
@@ -1686,45 +1745,18 @@ export function BulkImportPage() {
                 />
               )}
 
-              {/* Verify Dialog */}
+              {/* Verify Dialog — Editable */}
               <Dialog open={verifyDialogOpen} onOpenChange={setVerifyDialogOpen}>
-                <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
+                <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
                   <DialogHeader>
-                    <DialogTitle>{verifyDialogResort?.name ?? 'Resort'}</DialogTitle>
-                    <DialogDescription>{verifyDialogResort?.country} - {verifyDialogResort?.region ?? 'N/A'}</DialogDescription>
+                    <DialogTitle>Edit & Verify Resort</DialogTitle>
+                    <DialogDescription>
+                      Fill in missing fields to improve completeness, then save or verify.
+                    </DialogDescription>
                   </DialogHeader>
 
                   {verifyDialogResort && (
-                    <div className="space-y-4">
-                      <div className="grid grid-cols-2 gap-3 text-sm">
-                        <div>
-                          <span className="text-muted-foreground">Country Code:</span> {verifyDialogResort.country_code}
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground">Coordinates:</span> {verifyDialogResort.lat}, {verifyDialogResort.lng}
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground">Lifts:</span> {verifyDialogResort.lifts ?? '-'}
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground">Runs:</span> {verifyDialogResort.runs ?? '-'}
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground">Vertical:</span> {verifyDialogResort.vertical_m ?? '-'}m
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground">Pass:</span> {verifyDialogResort.pass_affiliation ?? '-'}
-                        </div>
-                        {verifyDialogResort.website && (
-                          <div className="col-span-2">
-                            <span className="text-muted-foreground">Website:</span>{' '}
-                            <a href={verifyDialogResort.website} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
-                              {verifyDialogResort.website}
-                            </a>
-                          </div>
-                        )}
-                      </div>
-
+                    <div className="space-y-5">
                       {/* Completeness indicator */}
                       {(() => {
                         const { filled, total, label, color } = getVerifyCompleteness(verifyDialogResort)
@@ -1732,48 +1764,313 @@ export function BulkImportPage() {
                         return (
                           <div className="flex items-center gap-3 text-sm">
                             <span className="text-muted-foreground">Completeness:</span>
-                            <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden max-w-[150px]">
+                            <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden max-w-[200px]">
                               <div
                                 className={cn(
-                                  'h-full rounded-full',
+                                  'h-full rounded-full transition-all',
                                   filled === total ? 'bg-green-400' : filled >= 10 ? 'bg-yellow-400' : 'bg-red-400'
                                 )}
                                 style={{ width: `${pct}%` }}
                               />
                             </div>
                             <span className={cn('font-medium', color)}>{label} ({filled}/{total})</span>
+                            {verifyDirty && <Badge className="bg-yellow-500/15 text-yellow-400 text-[10px] ml-auto">Unsaved</Badge>}
                           </div>
                         )
                       })()}
 
+                      {/* Identity */}
                       <div>
-                        <Label className="text-xs">Verification Notes</Label>
+                        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Identity</h4>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <Label className="text-[10px]">Name *</Label>
+                            <Input
+                              value={verifyDialogResort.name ?? ''}
+                              onChange={(e) => updateVerifyField('name', e.target.value)}
+                              className="h-8 text-xs"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-[10px]">Country *</Label>
+                            <Input
+                              value={verifyDialogResort.country ?? ''}
+                              onChange={(e) => updateVerifyField('country', e.target.value)}
+                              className="h-8 text-xs"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-[10px]">Country Code *</Label>
+                            <Input
+                              value={verifyDialogResort.country_code ?? ''}
+                              onChange={(e) => updateVerifyField('country_code', e.target.value.toUpperCase())}
+                              className="h-8 text-xs"
+                              maxLength={2}
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-[10px]">Region</Label>
+                            <Input
+                              value={verifyDialogResort.region ?? ''}
+                              onChange={(e) => updateVerifyField('region', e.target.value || null)}
+                              className="h-8 text-xs"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Location */}
+                      <div>
+                        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Location</h4>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <Label className="text-[10px]">Latitude *</Label>
+                            <Input
+                              type="number"
+                              step="any"
+                              value={verifyDialogResort.lat ?? ''}
+                              onChange={(e) => updateVerifyField('lat', e.target.value ? Number(e.target.value) : 0)}
+                              className="h-8 text-xs"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-[10px]">Longitude *</Label>
+                            <Input
+                              type="number"
+                              step="any"
+                              value={verifyDialogResort.lng ?? ''}
+                              onChange={(e) => updateVerifyField('lng', e.target.value ? Number(e.target.value) : 0)}
+                              className="h-8 text-xs"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Stats */}
+                      <div>
+                        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Stats</h4>
+                        <div className="grid grid-cols-4 gap-3">
+                          <div>
+                            <Label className="text-[10px]">Vertical (m)</Label>
+                            <Input
+                              type="number"
+                              value={verifyDialogResort.vertical_m ?? ''}
+                              onChange={(e) => updateVerifyField('vertical_m', e.target.value ? Number(e.target.value) : null)}
+                              className="h-8 text-xs"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-[10px]">Runs</Label>
+                            <Input
+                              type="number"
+                              value={verifyDialogResort.runs ?? ''}
+                              onChange={(e) => updateVerifyField('runs', e.target.value ? Number(e.target.value) : null)}
+                              className="h-8 text-xs"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-[10px]">Lifts</Label>
+                            <Input
+                              type="number"
+                              value={verifyDialogResort.lifts ?? ''}
+                              onChange={(e) => updateVerifyField('lifts', e.target.value ? Number(e.target.value) : null)}
+                              className="h-8 text-xs"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-[10px]">Snowfall (cm/yr)</Label>
+                            <Input
+                              type="number"
+                              value={verifyDialogResort.annual_snowfall_cm ?? ''}
+                              onChange={(e) => updateVerifyField('annual_snowfall_cm', e.target.value ? Number(e.target.value) : null)}
+                              className="h-8 text-xs"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Terrain Mix */}
+                      <div>
+                        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Terrain Mix</h4>
+                        <div className="grid grid-cols-3 gap-3">
+                          <div>
+                            <Label className="text-[10px]">Beginner %</Label>
+                            <Input
+                              type="number"
+                              value={verifyDialogResort.beginner_pct ?? ''}
+                              onChange={(e) => updateVerifyField('beginner_pct', e.target.value ? Number(e.target.value) : null)}
+                              className="h-8 text-xs"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-[10px]">Intermediate %</Label>
+                            <Input
+                              type="number"
+                              value={verifyDialogResort.intermediate_pct ?? ''}
+                              onChange={(e) => updateVerifyField('intermediate_pct', e.target.value ? Number(e.target.value) : null)}
+                              className="h-8 text-xs"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-[10px]">Advanced %</Label>
+                            <Input
+                              type="number"
+                              value={verifyDialogResort.advanced_pct ?? ''}
+                              onChange={(e) => updateVerifyField('advanced_pct', e.target.value ? Number(e.target.value) : null)}
+                              className="h-8 text-xs"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Season & Night Skiing */}
+                      <div>
+                        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Season</h4>
+                        <div className="grid grid-cols-3 gap-3">
+                          <div>
+                            <Label className="text-[10px]">Season Open</Label>
+                            <Input
+                              value={verifyDialogResort.season_open ?? ''}
+                              onChange={(e) => updateVerifyField('season_open', e.target.value || null)}
+                              className="h-8 text-xs"
+                              placeholder="e.g. Nov 15"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-[10px]">Season Close</Label>
+                            <Input
+                              value={verifyDialogResort.season_close ?? ''}
+                              onChange={(e) => updateVerifyField('season_close', e.target.value || null)}
+                              className="h-8 text-xs"
+                              placeholder="e.g. Apr 15"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-[10px]">Night Skiing</Label>
+                            <Select
+                              value={verifyDialogResort.has_night_skiing === true ? 'true' : verifyDialogResort.has_night_skiing === false ? 'false' : 'unknown'}
+                              onValueChange={(val) => updateVerifyField('has_night_skiing', val === 'unknown' ? null : val === 'true')}
+                            >
+                              <SelectTrigger className="h-8 text-xs">
+                                <SelectValue placeholder="--" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="unknown">Unknown</SelectItem>
+                                <SelectItem value="true">Yes</SelectItem>
+                                <SelectItem value="false">No</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Other */}
+                      <div>
+                        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Other</h4>
+                        <div className="grid grid-cols-3 gap-3">
+                          <div>
+                            <Label className="text-[10px]">Website</Label>
+                            <Input
+                              value={verifyDialogResort.website ?? ''}
+                              onChange={(e) => updateVerifyField('website', e.target.value || null)}
+                              className="h-8 text-xs"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-[10px]">Pass Affiliation</Label>
+                            <Input
+                              value={verifyDialogResort.pass_affiliation ?? ''}
+                              onChange={(e) => updateVerifyField('pass_affiliation', e.target.value || null)}
+                              className="h-8 text-xs"
+                              placeholder="epic, ikon, etc."
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-[10px]">Budget Tier</Label>
+                            <Select
+                              value={verifyDialogResort.budget_tier ?? 'none'}
+                              onValueChange={(val) => updateVerifyField('budget_tier', val === 'none' ? null : val)}
+                            >
+                              <SelectTrigger className="h-8 text-xs">
+                                <SelectValue placeholder="--" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="none">Not set</SelectItem>
+                                <SelectItem value="budget">Budget</SelectItem>
+                                <SelectItem value="mid">Mid</SelectItem>
+                                <SelectItem value="premium">Premium</SelectItem>
+                                <SelectItem value="luxury">Luxury</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                        <div className="mt-3">
+                          <Label className="text-[10px]">Description</Label>
+                          <textarea
+                            value={verifyDialogResort.description ?? ''}
+                            onChange={(e) => updateVerifyField('description', e.target.value || null)}
+                            rows={3}
+                            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring resize-y mt-1"
+                            placeholder="Brief resort description..."
+                          />
+                        </div>
+                      </div>
+
+                      {/* Verification Notes */}
+                      <div>
+                        <Label className="text-[10px]">Verification Notes</Label>
                         <textarea
                           value={verifyNotes}
                           onChange={(e) => setVerifyNotes(e.target.value)}
-                          rows={3}
-                          className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring resize-y mt-1"
+                          rows={2}
+                          className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring resize-y mt-1"
                           placeholder="Optional notes about data accuracy..."
                         />
                       </div>
 
-                      <div className="flex justify-end gap-2">
+                      {/* Actions */}
+                      <div className="flex items-center gap-2 pt-1">
                         <Button
                           variant="outline"
-                          onClick={() => handleSingleVerify(verifyDialogResort.id, false, verifyNotes)}
-                          disabled={verifyLoading}
+                          size="sm"
+                          onClick={() => handleSaveResortFields()}
+                          disabled={!verifyDirty || verifySaving || verifyLoading}
+                          className="gap-1"
+                        >
+                          {verifySaving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Database className="w-3 h-3" />}
+                          Save Changes
+                        </Button>
+                        <div className="flex-1" />
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            if (verifyDirty) {
+                              handleSaveResortFields({ verified: false, notes: verifyNotes })
+                            } else {
+                              handleSingleVerify(verifyDialogResort.id, false, verifyNotes)
+                            }
+                          }}
+                          disabled={verifyLoading || verifySaving}
                           className="gap-1"
                         >
                           {verifyLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <AlertTriangle className="w-3 h-3" />}
-                          Flag with Notes
+                          Flag
                         </Button>
                         <Button
-                          onClick={() => handleSingleVerify(verifyDialogResort.id, true, verifyNotes)}
-                          disabled={verifyLoading}
+                          size="sm"
+                          onClick={() => {
+                            if (verifyDirty) {
+                              handleSaveResortFields({ verified: true, notes: verifyNotes })
+                            } else {
+                              handleSingleVerify(verifyDialogResort.id, true, verifyNotes)
+                            }
+                          }}
+                          disabled={verifyLoading || verifySaving}
                           className="gap-1"
                         >
-                          {verifyLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />}
-                          Verify
+                          {(verifyLoading || verifySaving) ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />}
+                          {verifyDirty ? 'Save & Verify' : 'Verify'}
                         </Button>
                       </div>
                     </div>
