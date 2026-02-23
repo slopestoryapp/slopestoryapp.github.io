@@ -81,6 +81,7 @@ interface ImportResortRow {
   pass_affiliation?: string
   instagram_handle?: string
   description?: string
+  budget_tier?: string
 }
 
 interface RowIssue {
@@ -144,7 +145,7 @@ type StatusFilter = 'all' | 'error' | 'warning' | 'ready' | 'skipped'
 const COMPLETENESS_FIELDS: (keyof ImportResortRow)[] = [
   'country_code', 'region', 'vertical_m', 'runs', 'lifts',
   'annual_snowfall_cm', 'beginner_pct', 'intermediate_pct', 'advanced_pct',
-  'season_open', 'season_close', 'has_night_skiing', 'description',
+  'season_open', 'season_close', 'has_night_skiing', 'description', 'budget_tier',
 ]
 
 // For verification queue — same fields but checked on UnverifiedResort
@@ -236,6 +237,7 @@ function normalizeRow(raw: Record<string, unknown>): ImportResortRow {
     pass_affiliation: raw.pass_affiliation ? String(raw.pass_affiliation).trim() : undefined,
     instagram_handle: raw.instagram_handle ? String(raw.instagram_handle).trim() : undefined,
     description: raw.description ? String(raw.description).trim() : undefined,
+    budget_tier: raw.budget_tier ? String(raw.budget_tier).trim() : undefined,
   }
 }
 
