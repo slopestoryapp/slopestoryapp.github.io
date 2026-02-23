@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import {
   flexRender,
   getCoreRowModel,
@@ -29,6 +29,7 @@ interface DataTableProps<TData, TValue> {
   onRowClick?: (row: TData) => void
   pageSize?: number
   defaultSorting?: SortingState
+  onSortingChange?: (sorting: SortingState) => void
   // Server-side pagination
   serverPagination?: {
     totalCount: number
@@ -46,9 +47,18 @@ export function DataTable<TData, TValue>({
   onRowClick,
   pageSize = 50,
   defaultSorting,
+  onSortingChange: onSortingChangeProp,
   serverPagination,
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = useState<SortingState>(defaultSorting ?? [])
+
+  const handleSortingChange = useCallback((updater: SortingState | ((prev: SortingState) => SortingState)) => {
+    setSorting(prev => {
+      const next = typeof updater === 'function' ? updater(prev) : updater
+      onSortingChangeProp?.(next)
+      return next
+    })
+  }, [onSortingChangeProp])
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({})
   const [globalFilter, setGlobalFilter] = useState('')
@@ -61,7 +71,7 @@ export function DataTable<TData, TValue>({
     getSortedRowModel: getSortedRowModel(),
     getPaginationRowModel: serverPagination ? undefined : getPaginationRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
-    onSortingChange: setSorting,
+    onSortingChange: handleSortingChange,
     onColumnFiltersChange: setColumnFilters,
     onRowSelectionChange: enableSelection ? setRowSelection : undefined,
     onGlobalFilterChange: setGlobalFilter,

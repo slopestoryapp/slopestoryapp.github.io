@@ -29,6 +29,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import type { ColumnDef } from '@tanstack/react-table'
 import {
   Upload,
@@ -46,6 +52,8 @@ import {
   SkipForward,
   RefreshCw,
   XCircle,
+  Search,
+  ExternalLink,
 } from 'lucide-react'
 
 // ---------------------------------------------------------------------------
@@ -295,6 +303,14 @@ function getVerifyCompleteness(resort: UnverifiedResort): { filled: number; tota
   return { filled, total, label, color }
 }
 
+const PLACEHOLDER_SEGMENTS = ['/resort-placeholders/', '/resorts/placeholders/']
+
+function getCoverStatus(url: string | null): 'real' | 'placeholder' | 'none' {
+  if (!url) return 'none'
+  if (PLACEHOLDER_SEGMENTS.some(seg => url.includes(seg))) return 'placeholder'
+  return 'real'
+}
+
 function statusIcon(status: WorkbenchRow['status']) {
   switch (status) {
     case 'error': return <XCircle className="w-4 h-4 text-red-400" />
@@ -353,12 +369,33 @@ export function BulkImportPage() {
   const [deleteBlockedDialogOpen, setDeleteBlockedDialogOpen] = useState(false)
   const [deleteBlockedResorts, setDeleteBlockedResorts] = useState<{ id: string; name: string; reason: string }[]>([])
   const [deleteResult, setDeleteResult] = useState<{ deleted: number } | null>(null)
+  const [verifyDeleteConfirmOpen, setVerifyDeleteConfirmOpen] = useState(false)
+
+  // -- Verification filters & server-side sort --
+  const [verifySort, setVerifySort] = useState<{ column: string; desc: boolean }>({ column: 'name', desc: false })
+  const [verifyCountryFilter, setVerifyCountryFilter] = useState('all')
+  const [verifyCompletenessFilter, setVerifyCompletenessFilter] = useState('all')
+  const [verifySearch, setVerifySearch] = useState('')
+  const [verifySearchDebounced, setVerifySearchDebounced] = useState('')
+  const [availableCountries, setAvailableCountries] = useState<{ code: string; name: string; count: number }[]>([])
 
   // -- Placeholders Tab State --
   const [noCoverCount, setNoCoverCount] = useState(0)
   const [hasCoverCount, setHasCoverCount] = useState(0)
   const [assigningPlaceholders, setAssigningPlaceholders] = useState(false)
   const [placeholdersLoading, setPlaceholdersLoading] = useState(false)
+
+  // =========================================================================
+  // DEBOUNCE: Search input
+  // =========================================================================
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setVerifySearchDebounced(verifySearch)
+      setUnverifiedPage(0)
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [verifySearch])
 
   // =========================================================================
   // SHARED: Placeholder discovery from R2
@@ -683,43 +720,149 @@ export function BulkImportPage() {
   // VERIFICATION TAB
   // =========================================================================
 
+  const handleVerifySortChange = useCallback((sorting: import('@tanstack/react-table').SortingState) => {
+    if (sorting.length > 0) {
+      setVerifySort({ column: sorting[0].id, desc: sorting[0].desc })
+    } else {
+      setVerifySort({ column: 'name', desc: false })
+    }
+    setUnverifiedPage(0)
+  }, [])
+
+  const loadAvailableCountries = useCallback(async () => {
+    const { data } = await supabase
+      .from('resorts')
+      .select('country_code, country')
+      .eq('verified', false)
+    if (data) {
+      const countMap = new Map<string, { name: string; count: number }>()
+      for (const r of data) {
+        const existing = countMap.get(r.country_code)
+        if (existing) existing.count++
+        else countMap.set(r.country_code, { name: r.country, count: 1 })
+      }
+      setAvailableCountries(
+        Array.from(countMap.entries())
+          .map(([code, { name, count }]) => ({ code, name, count }))
+          .sort((a, b) => a.name.localeCompare(b.name))
+      )
+    }
+  }, [])
+
   const loadUnverified = useCallback(async () => {
     setUnverifiedLoading(true)
     try {
       const from = unverifiedPage * PAGE_SIZE
-      const [unverified, verified, total] = await Promise.all([
-        supabase
-          .from('resorts')
-          .select('id, name, country, country_code, region, lat, lng, website, vertical_m, runs, lifts, verified, verification_notes, pass_affiliation, annual_snowfall_cm, beginner_pct, intermediate_pct, advanced_pct, season_open, season_close, has_night_skiing, description, budget_tier, instagram_handle, cover_image_url')
-          .eq('verified', false)
-          .order('name')
-          .range(from, from + PAGE_SIZE - 1),
+
+      // Build data query with filters
+      let query = supabase
+        .from('resorts')
+        .select('id, name, country, country_code, region, lat, lng, website, vertical_m, runs, lifts, verified, verification_notes, pass_affiliation, annual_snowfall_cm, beginner_pct, intermediate_pct, advanced_pct, season_open, season_close, has_night_skiing, description, budget_tier, instagram_handle, cover_image_url')
+        .eq('verified', false)
+
+      // Build count query (same filters)
+      let countQuery = supabase
+        .from('resorts')
+        .select('*', { count: 'exact', head: true })
+        .eq('verified', false)
+
+      // Country filter
+      if (verifyCountryFilter !== 'all') {
+        query = query.eq('country_code', verifyCountryFilter)
+        countQuery = countQuery.eq('country_code', verifyCountryFilter)
+      }
+
+      // Name search
+      if (verifySearchDebounced.trim()) {
+        query = query.ilike('name', `%${verifySearchDebounced.trim()}%`)
+        countQuery = countQuery.ilike('name', `%${verifySearchDebounced.trim()}%`)
+      }
+
+      // Server-side sort for DB columns
+      const dbSortColumns: Record<string, string> = {
+        name: 'name', country: 'country', region: 'region',
+        lifts: 'lifts', runs: 'runs', pass_affiliation: 'pass_affiliation', budget_tier: 'budget_tier',
+      }
+      const dbCol = dbSortColumns[verifySort.column]
+      if (dbCol) {
+        query = query.order(dbCol, { ascending: !verifySort.desc, nullsFirst: false })
+      } else {
+        query = query.order('name', { ascending: true })
+      }
+
+      query = query.range(from, from + PAGE_SIZE - 1)
+
+      const [unverified, verified, filteredCount] = await Promise.all([
+        query,
         supabase
           .from('resorts')
           .select('*', { count: 'exact', head: true })
           .eq('verified', true),
-        supabase
-          .from('resorts')
-          .select('*', { count: 'exact', head: true }),
+        countQuery,
       ])
-      setUnverifiedResorts((unverified.data ?? []) as UnverifiedResort[])
-      setUnverifiedTotal((total.count ?? 0) - (verified.count ?? 0))
+
+      let resorts = (unverified.data ?? []) as UnverifiedResort[]
+
+      // Client-side sort for computed columns (completeness)
+      if (verifySort.column === 'completeness') {
+        resorts = [...resorts].sort((a, b) => {
+          const aFilled = getVerifyCompleteness(a).filled
+          const bFilled = getVerifyCompleteness(b).filled
+          return verifySort.desc ? bFilled - aFilled : aFilled - bFilled
+        })
+      }
+
+      // Client-side completeness filter
+      if (verifyCompletenessFilter !== 'all') {
+        resorts = resorts.filter(r => {
+          const { filled, total } = getVerifyCompleteness(r)
+          const pct = filled / total
+          switch (verifyCompletenessFilter) {
+            case '100': return filled === total
+            case '75': return pct >= 0.75
+            case 'incomplete': return pct < 0.75
+            default: return true
+          }
+        })
+      }
+
+      setUnverifiedResorts(resorts)
+      setUnverifiedTotal(filteredCount.count ?? 0)
       setVerifiedTotal(verified.count ?? 0)
     } catch {
       toast.error('Failed to load resorts')
     } finally {
       setUnverifiedLoading(false)
     }
-  }, [unverifiedPage])
+  }, [unverifiedPage, verifySort, verifyCountryFilter, verifySearchDebounced, verifyCompletenessFilter])
 
   useEffect(() => {
-    if (topTab === 'verification') loadUnverified()
-  }, [topTab, unverifiedPage, loadUnverified])
+    if (topTab === 'verification') {
+      loadUnverified()
+      loadAvailableCountries()
+    }
+  }, [topTab, loadUnverified, loadAvailableCountries])
 
   const handleBulkVerify = useCallback(async (verified: boolean) => {
     if (selectedVerifyIds.size === 0) return
     setVerifyLoading(true)
     try {
+      // Auto-assign placeholders for resorts without covers
+      if (verified) {
+        const noCoverIds = unverifiedResorts
+          .filter(r => selectedVerifyIds.has(r.id) && getCoverStatus(r.cover_image_url) === 'none')
+          .map(r => r.id)
+        if (noCoverIds.length > 0) {
+          if (discoveredPlaceholders.length === 0) await fetchPlaceholderUrls(true)
+          if (discoveredPlaceholders.length > 0) {
+            for (const id of noCoverIds) {
+              const randomUrl = discoveredPlaceholders[Math.floor(Math.random() * discoveredPlaceholders.length)]
+              await supabase.from('resorts').update({ cover_image_url: randomUrl }).eq('id', id)
+            }
+          }
+        }
+      }
+
       const res = await callEdgeFunction('admin-bulk-import-resorts', {
         action: 'bulk_verify',
         resort_ids: Array.from(selectedVerifyIds),
@@ -738,11 +881,23 @@ export function BulkImportPage() {
     } finally {
       setVerifyLoading(false)
     }
-  }, [selectedVerifyIds, loadUnverified, log])
+  }, [selectedVerifyIds, unverifiedResorts, loadUnverified, log, discoveredPlaceholders, fetchPlaceholderUrls])
 
   const handleSingleVerify = useCallback(async (resortId: string, verified: boolean, notes: string) => {
     setVerifyLoading(true)
     try {
+      // Auto-assign placeholder if verifying and no cover image
+      if (verified) {
+        const resort = verifyDialogResort ?? unverifiedResorts.find(r => r.id === resortId)
+        if (resort && getCoverStatus(resort.cover_image_url) === 'none') {
+          if (discoveredPlaceholders.length === 0) await fetchPlaceholderUrls(true)
+          if (discoveredPlaceholders.length > 0) {
+            const randomUrl = discoveredPlaceholders[Math.floor(Math.random() * discoveredPlaceholders.length)]
+            await supabase.from('resorts').update({ cover_image_url: randomUrl }).eq('id', resortId)
+          }
+        }
+      }
+
       await callEdgeFunction('admin-bulk-import-resorts', {
         action: 'verify',
         resort_id: resortId,
@@ -765,7 +920,7 @@ export function BulkImportPage() {
     } finally {
       setVerifyLoading(false)
     }
-  }, [loadUnverified, log])
+  }, [loadUnverified, log, verifyDialogResort, unverifiedResorts, discoveredPlaceholders, fetchPlaceholderUrls])
 
   const updateVerifyField = useCallback(<K extends keyof UnverifiedResort>(field: K, value: UnverifiedResort[K]) => {
     setVerifyDialogResort(prev => prev ? { ...prev, [field]: value } : prev)
@@ -823,6 +978,39 @@ export function BulkImportPage() {
       setVerifySaving(false)
     }
   }, [verifyDialogResort, handleSingleVerify, log])
+
+  const handleDeleteFromDialog = useCallback(async () => {
+    if (!verifyDialogResort) return
+    setVerifyDeleteConfirmOpen(false)
+    setVerifyLoading(true)
+    try {
+      const res = await callEdgeFunction('admin-bulk-import-resorts', {
+        action: 'bulk_delete',
+        resort_ids: [verifyDialogResort.id],
+      })
+      const blocked = res.blocked ?? []
+      if (blocked.length > 0) {
+        setDeleteBlockedResorts(blocked)
+        setDeleteBlockedDialogOpen(true)
+      } else {
+        toast.success(`Deleted ${verifyDialogResort.name}`)
+        await log({
+          action: 'delete_resort',
+          entity_type: 'resort',
+          entity_id: verifyDialogResort.id,
+          details: { name: verifyDialogResort.name },
+        })
+      }
+      setVerifyDialogOpen(false)
+      setVerifyDialogResort(null)
+      await loadUnverified()
+      await loadAvailableCountries()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to delete')
+    } finally {
+      setVerifyLoading(false)
+    }
+  }, [verifyDialogResort, loadUnverified, loadAvailableCountries, log])
 
   const handleBulkDelete = useCallback(async () => {
     if (selectedVerifyIds.size === 0) return
@@ -1061,6 +1249,61 @@ export function BulkImportPage() {
     { accessorKey: 'lifts', header: 'Lifts', cell: ({ row }) => row.original.lifts ?? '-' },
     { accessorKey: 'runs', header: 'Runs', cell: ({ row }) => row.original.runs ?? '-' },
     {
+      id: 'cover',
+      header: 'Cover',
+      cell: ({ row }) => {
+        const status = getCoverStatus(row.original.cover_image_url)
+        if (status === 'real') return (
+          <Tooltip>
+            <TooltipTrigger>
+              <div className="w-8 h-8 rounded overflow-hidden border border-border">
+                <img src={row.original.cover_image_url!} alt="" className="w-full h-full object-cover" />
+              </div>
+            </TooltipTrigger>
+            <TooltipContent>Real cover image</TooltipContent>
+          </Tooltip>
+        )
+        if (status === 'placeholder') return (
+          <Tooltip>
+            <TooltipTrigger><ImageIcon className="w-4 h-4 text-yellow-400" /></TooltipTrigger>
+            <TooltipContent>Placeholder image</TooltipContent>
+          </Tooltip>
+        )
+        return (
+          <Tooltip>
+            <TooltipTrigger><XCircle className="w-4 h-4 text-red-400" /></TooltipTrigger>
+            <TooltipContent>No cover image</TooltipContent>
+          </Tooltip>
+        )
+      },
+      size: 50,
+      enableSorting: false,
+    },
+    {
+      accessorKey: 'pass_affiliation',
+      header: 'Pass',
+      cell: ({ row }) => row.original.pass_affiliation
+        ? <Badge className="bg-blue-500/15 text-blue-400 text-[10px]">{row.original.pass_affiliation}</Badge>
+        : <span className="text-muted-foreground text-xs">-</span>,
+      size: 90,
+    },
+    {
+      accessorKey: 'budget_tier',
+      header: 'Tier',
+      cell: ({ row }) => {
+        const tier = row.original.budget_tier
+        if (!tier) return <span className="text-muted-foreground text-xs">-</span>
+        const colors: Record<string, string> = {
+          budget: 'bg-green-500/15 text-green-400',
+          mid: 'bg-blue-500/15 text-blue-400',
+          premium: 'bg-purple-500/15 text-purple-400',
+          luxury: 'bg-amber-500/15 text-amber-400',
+        }
+        return <Badge className={cn(colors[tier] ?? '', 'text-[10px]')}>{tier}</Badge>
+      },
+      size: 80,
+    },
+    {
       id: 'completeness',
       header: 'Completeness',
       accessorFn: (row) => getVerifyCompleteness(row).filled,
@@ -1087,19 +1330,44 @@ export function BulkImportPage() {
       enableSorting: true,
     },
     {
-      accessorKey: 'verification_notes',
-      header: 'Notes',
-      cell: ({ row }) => row.original.verification_notes
-        ? <Badge className="bg-yellow-500/15 text-yellow-400 text-xs truncate max-w-[200px]">{row.original.verification_notes}</Badge>
-        : '-',
+      id: 'actions',
+      header: '',
+      cell: ({ row }) => {
+        const resort = row.original
+        const { filled, total } = getVerifyCompleteness(resort)
+        if (filled !== total) return null
+        return (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 w-7 p-0"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  handleSingleVerify(resort.id, true, '')
+                }}
+              >
+                <CheckCircle2 className="w-4 h-4 text-green-400" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              Quick verify{getCoverStatus(resort.cover_image_url) === 'none' ? ' (placeholder will be assigned)' : ''}
+            </TooltipContent>
+          </Tooltip>
+        )
+      },
+      size: 50,
+      enableSorting: false,
     },
-  ], [selectedVerifyIds, unverifiedResorts])
+  ], [selectedVerifyIds, unverifiedResorts, handleSingleVerify])
 
   // =========================================================================
   // RENDER
   // =========================================================================
 
   return (
+    <TooltipProvider>
     <div className="min-h-screen">
       <Header title="Bulk Import" subtitle="Import, verify, and manage resorts at scale" />
 
@@ -1717,6 +1985,45 @@ export function BulkImportPage() {
                 </div>
               )}
 
+              {/* Filter toolbar */}
+              <div className="flex items-center gap-3 flex-wrap">
+                <div className="relative flex-1 min-w-[200px] max-w-sm">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                  <Input
+                    placeholder="Search resorts..."
+                    value={verifySearch}
+                    onChange={(e) => setVerifySearch(e.target.value)}
+                    className="h-8 text-xs pl-8"
+                  />
+                </div>
+                <Select value={verifyCountryFilter} onValueChange={(val) => { setVerifyCountryFilter(val); setUnverifiedPage(0) }}>
+                  <SelectTrigger className="w-[200px] h-8 text-xs">
+                    <SelectValue placeholder="All Countries" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Countries</SelectItem>
+                    {availableCountries.map(c => (
+                      <SelectItem key={c.code} value={c.code}>{c.name} ({c.count})</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select value={verifyCompletenessFilter} onValueChange={(val) => { setVerifyCompletenessFilter(val); setUnverifiedPage(0) }}>
+                  <SelectTrigger className="w-[170px] h-8 text-xs">
+                    <SelectValue placeholder="All Completeness" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Completeness</SelectItem>
+                    <SelectItem value="100">100% Ready</SelectItem>
+                    <SelectItem value="75">75%+ Almost</SelectItem>
+                    <SelectItem value="incomplete">Needs Work</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button variant="outline" size="sm" onClick={() => loadUnverified()} disabled={unverifiedLoading} className="gap-1 h-8">
+                  <RefreshCw className={cn('w-3 h-3', unverifiedLoading && 'animate-spin')} />
+                  Refresh
+                </Button>
+              </div>
+
               {unverifiedLoading ? (
                 <div className="space-y-3">
                   {Array.from({ length: 8 }).map((_, i) => (
@@ -1735,6 +2042,7 @@ export function BulkImportPage() {
                   }}
                   pageSize={PAGE_SIZE}
                   defaultSorting={[{ id: 'completeness', desc: true }]}
+                  onSortingChange={handleVerifySortChange}
                   serverPagination={{
                     totalCount: unverifiedTotal,
                     page: unverifiedPage,
@@ -1776,6 +2084,33 @@ export function BulkImportPage() {
                           </div>
                         )
                       })()}
+
+                      {/* Cover Image */}
+                      <div>
+                        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Cover Image</h4>
+                        {verifyDialogResort.cover_image_url ? (
+                          <div className="flex items-start gap-3">
+                            <div className="w-32 h-20 rounded-lg overflow-hidden border border-border bg-muted shrink-0">
+                              <img src={verifyDialogResort.cover_image_url} alt="" className="w-full h-full object-cover" />
+                            </div>
+                            <div className="space-y-1">
+                              <Badge className={cn(
+                                'text-[10px]',
+                                getCoverStatus(verifyDialogResort.cover_image_url) === 'placeholder'
+                                  ? 'bg-yellow-500/15 text-yellow-400'
+                                  : 'bg-green-500/15 text-green-400'
+                              )}>
+                                {getCoverStatus(verifyDialogResort.cover_image_url) === 'placeholder' ? 'Placeholder' : 'Real Cover'}
+                              </Badge>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2 text-sm text-yellow-400">
+                            <AlertTriangle className="w-4 h-4" />
+                            <span className="text-xs">No cover image — placeholder will be auto-assigned on verify</span>
+                          </div>
+                        )}
+                      </div>
 
                       {/* Identity */}
                       <div>
@@ -1842,6 +2177,16 @@ export function BulkImportPage() {
                             />
                           </div>
                         </div>
+                        {verifyDialogResort.lat !== 0 && verifyDialogResort.lng !== 0 && (
+                          <a
+                            href={`https://www.google.com/maps/@${verifyDialogResort.lat},${verifyDialogResort.lng},14z`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 text-[10px] text-primary hover:underline mt-1.5"
+                          >
+                            <ExternalLink className="w-3 h-3" /> Open in Google Maps
+                          </a>
+                        )}
                       </div>
 
                       {/* Stats */}
@@ -1919,6 +2264,21 @@ export function BulkImportPage() {
                             />
                           </div>
                         </div>
+                        {(() => {
+                          const b = verifyDialogResort.beginner_pct ?? 0
+                          const i = verifyDialogResort.intermediate_pct ?? 0
+                          const a = verifyDialogResort.advanced_pct ?? 0
+                          const sum = b + i + a
+                          if ((b > 0 || i > 0 || a > 0) && Math.abs(sum - 100) > 5) {
+                            return (
+                              <div className="flex items-center gap-1.5 mt-1.5 text-yellow-400">
+                                <AlertTriangle className="w-3 h-3 shrink-0" />
+                                <span className="text-[10px]">Terrain percentages sum to {sum}% (expected ~100%)</span>
+                              </div>
+                            )
+                          }
+                          return null
+                        })()}
                       </div>
 
                       {/* Season & Night Skiing */}
@@ -1968,11 +2328,23 @@ export function BulkImportPage() {
                         <div className="grid grid-cols-4 gap-3">
                           <div>
                             <Label className="text-[10px]">Website</Label>
-                            <Input
-                              value={verifyDialogResort.website ?? ''}
-                              onChange={(e) => updateVerifyField('website', e.target.value || null)}
-                              className="h-8 text-xs"
-                            />
+                            <div className="flex items-center gap-1">
+                              <Input
+                                value={verifyDialogResort.website ?? ''}
+                                onChange={(e) => updateVerifyField('website', e.target.value || null)}
+                                className="h-8 text-xs flex-1"
+                              />
+                              {verifyDialogResort.website && (
+                                <a
+                                  href={verifyDialogResort.website.startsWith('http') ? verifyDialogResort.website : `https://${verifyDialogResort.website}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-primary hover:text-primary/80 shrink-0"
+                                >
+                                  <ExternalLink className="w-3.5 h-3.5" />
+                                </a>
+                              )}
+                            </div>
                           </div>
                           <div>
                             <Label className="text-[10px]">Pass Affiliation</Label>
@@ -2023,20 +2395,8 @@ export function BulkImportPage() {
                         </div>
                       </div>
 
-                      {/* Verification Notes */}
-                      <div>
-                        <Label className="text-[10px]">Verification Notes</Label>
-                        <textarea
-                          value={verifyNotes}
-                          onChange={(e) => setVerifyNotes(e.target.value)}
-                          rows={2}
-                          className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring resize-y mt-1"
-                          placeholder="Optional notes about data accuracy..."
-                        />
-                      </div>
-
                       {/* Actions */}
-                      <div className="flex items-center gap-2 pt-1">
+                      <div className="flex items-center gap-2 pt-1 border-t border-border mt-2 pt-3">
                         <Button
                           variant="outline"
                           size="sm"
@@ -2047,30 +2407,24 @@ export function BulkImportPage() {
                           {verifySaving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Database className="w-3 h-3" />}
                           Save Changes
                         </Button>
-                        <div className="flex-1" />
                         <Button
-                          variant="outline"
+                          variant="destructive"
                           size="sm"
-                          onClick={() => {
-                            if (verifyDirty) {
-                              handleSaveResortFields({ verified: false, notes: verifyNotes })
-                            } else {
-                              handleSingleVerify(verifyDialogResort.id, false, verifyNotes)
-                            }
-                          }}
+                          onClick={() => setVerifyDeleteConfirmOpen(true)}
                           disabled={verifyLoading || verifySaving}
                           className="gap-1"
                         >
-                          {verifyLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <AlertTriangle className="w-3 h-3" />}
-                          Flag
+                          <Trash2 className="w-3 h-3" />
+                          Delete
                         </Button>
+                        <div className="flex-1" />
                         <Button
                           size="sm"
                           onClick={() => {
                             if (verifyDirty) {
-                              handleSaveResortFields({ verified: true, notes: verifyNotes })
+                              handleSaveResortFields({ verified: true, notes: '' })
                             } else {
-                              handleSingleVerify(verifyDialogResort.id, true, verifyNotes)
+                              handleSingleVerify(verifyDialogResort.id, true, '')
                             }
                           }}
                           disabled={verifyLoading || verifySaving}
@@ -2080,6 +2434,17 @@ export function BulkImportPage() {
                           {verifyDirty ? 'Save & Verify' : 'Verify'}
                         </Button>
                       </div>
+
+                      {/* Delete confirm dialog */}
+                      <ConfirmDialog
+                        open={verifyDeleteConfirmOpen}
+                        onOpenChange={setVerifyDeleteConfirmOpen}
+                        title="Delete Resort"
+                        description={`Delete "${verifyDialogResort.name}"? Resorts with user visits or wishlists cannot be deleted. This action cannot be undone.`}
+                        confirmLabel="Delete"
+                        variant="destructive"
+                        onConfirm={handleDeleteFromDialog}
+                      />
                     </div>
                   )}
                 </DialogContent>
@@ -2200,5 +2565,6 @@ export function BulkImportPage() {
         </Tabs>
       </div>
     </div>
+    </TooltipProvider>
   )
 }
