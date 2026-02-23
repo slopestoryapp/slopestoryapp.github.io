@@ -1231,8 +1231,11 @@ export function BulkImportPage() {
       })
 
       const affected = res.resorts_affected ?? 0
-      if (affected > 0) {
-        toast.success(`Deleted placeholder. ${affected} resort${affected === 1 ? '' : 's'} had cover cleared.`)
+      const reassigned = res.resorts_reassigned ?? 0
+      if (affected > 0 && reassigned > 0) {
+        toast.success(`Deleted placeholder. ${reassigned} resort${reassigned === 1 ? '' : 's'} reassigned to another placeholder.`)
+      } else if (affected > 0) {
+        toast.success(`Deleted placeholder. ${affected} resort${affected === 1 ? '' : 's'} had cover cleared (no other placeholders available).`)
       } else {
         toast.success('Placeholder deleted')
       }
@@ -2807,7 +2810,7 @@ export function BulkImportPage() {
               open={!!deleteConfirmUrl}
               onOpenChange={(open) => { if (!open) setDeleteConfirmUrl(null) }}
               title="Delete Placeholder"
-              description="Are you sure you want to delete this placeholder image? Any resorts using it will have their cover image cleared."
+              description="Are you sure you want to delete this placeholder? Resorts using it will be reassigned to another random placeholder (or cleared if none remain)."
               confirmLabel="Delete"
               variant="destructive"
               onConfirm={() => deleteConfirmUrl && handleDeletePlaceholder(deleteConfirmUrl)}
