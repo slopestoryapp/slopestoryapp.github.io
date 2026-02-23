@@ -54,6 +54,7 @@ import {
   XCircle,
   Search,
   ExternalLink,
+  Plus,
 } from 'lucide-react'
 
 // ---------------------------------------------------------------------------
@@ -386,6 +387,12 @@ export function BulkImportPage() {
   const [hasCoverCount, setHasCoverCount] = useState(0)
   const [assigningPlaceholders, setAssigningPlaceholders] = useState(false)
   const [placeholdersLoading, setPlaceholdersLoading] = useState(false)
+  const [uploadPreviews, setUploadPreviews] = useState<{ file: File; dataUrl: string }[]>([])
+  const [uploadCustomName, setUploadCustomName] = useState('')
+  const [uploadLoading, setUploadLoading] = useState(false)
+  const uploadFileRef = useRef<HTMLInputElement>(null)
+  const [deleteConfirmUrl, setDeleteConfirmUrl] = useState<string | null>(null)
+  const [deletingUrl, setDeletingUrl] = useState<string | null>(null)
 
   // =========================================================================
   // DEBOUNCE: Search input
@@ -1109,6 +1116,141 @@ export function BulkImportPage() {
       setAssigningPlaceholders(false)
     }
   }, [discoveredPlaceholders, loadPlaceholderCounts, log])
+
+  // =========================================================================
+  // PLACEHOLDER UPLOAD + DELETE
+  // =========================================================================
+
+  /** Compress image client-side via canvas before sending to edge function. */
+  const compressImageForUpload = useCallback(
+    (file: File, maxWidth = 2000, quality = 0.8): Promise<{ base64: string; mime: string }> =>
+      new Promise((resolve, reject) => {
+        const img = new window.Image()
+        img.onload = () => {
+          const canvas = document.createElement('canvas')
+          let w = img.width
+          let h = img.height
+          if (w > maxWidth) {
+            h = Math.round(h * (maxWidth / w))
+            w = maxWidth
+          }
+          canvas.width = w
+          canvas.height = h
+          const ctx = canvas.getContext('2d')!
+          ctx.drawImage(img, 0, 0, w, h)
+          const dataUrl = canvas.toDataURL('image/jpeg', quality)
+          resolve({ base64: dataUrl.split(',')[1], mime: 'image/jpeg' })
+          URL.revokeObjectURL(img.src)
+        }
+        img.onerror = () => {
+          URL.revokeObjectURL(img.src)
+          reject(new Error('Failed to load image'))
+        }
+        img.src = URL.createObjectURL(file)
+      }),
+    [],
+  )
+
+  const handlePlaceholderFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? [])
+    if (files.length === 0) return
+
+    const valid = files.filter((f) => {
+      if (!f.type.startsWith('image/')) {
+        toast.error(`${f.name} is not an image`)
+        return false
+      }
+      if (f.size > 10 * 1024 * 1024) {
+        toast.error(`${f.name} is too large (max 10MB)`)
+        return false
+      }
+      return true
+    })
+
+    // Revoke old previews
+    uploadPreviews.forEach(({ dataUrl }) => URL.revokeObjectURL(dataUrl))
+    setUploadPreviews(valid.map((file) => ({ file, dataUrl: URL.createObjectURL(file) })))
+    setUploadCustomName('')
+  }, [uploadPreviews])
+
+  const clearUploadState = useCallback(() => {
+    uploadPreviews.forEach(({ dataUrl }) => URL.revokeObjectURL(dataUrl))
+    setUploadPreviews([])
+    setUploadCustomName('')
+    if (uploadFileRef.current) uploadFileRef.current.value = ''
+  }, [uploadPreviews])
+
+  const handleUploadPlaceholders = useCallback(async () => {
+    if (uploadPreviews.length === 0) return
+    setUploadLoading(true)
+    let successCount = 0
+    try {
+      for (let i = 0; i < uploadPreviews.length; i++) {
+        const { file } = uploadPreviews[i]
+        toast.loading(`Processing ${i + 1} of ${uploadPreviews.length}...`, { id: 'placeholder-upload' })
+
+        const { base64, mime } = await compressImageForUpload(file)
+        const body: Record<string, unknown> = {
+          action: 'upload_placeholder',
+          image_data: base64,
+          image_mime: mime,
+        }
+        if (uploadPreviews.length === 1 && uploadCustomName.trim()) {
+          body.custom_name = uploadCustomName.trim()
+        }
+
+        await callEdgeFunction('admin-bulk-import-resorts', body)
+        successCount++
+      }
+
+      toast.success(`Uploaded ${successCount} placeholder image${successCount === 1 ? '' : 's'}`, {
+        id: 'placeholder-upload',
+      })
+
+      clearUploadState()
+      await fetchPlaceholderUrls(true)
+      await loadPlaceholderCounts()
+      await log({
+        action: 'upload_placeholder',
+        entity_type: 'placeholder',
+        details: { count: successCount },
+      })
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Upload failed', { id: 'placeholder-upload' })
+    } finally {
+      setUploadLoading(false)
+    }
+  }, [uploadPreviews, uploadCustomName, compressImageForUpload, clearUploadState, fetchPlaceholderUrls, loadPlaceholderCounts, log])
+
+  const handleDeletePlaceholder = useCallback(async (url: string) => {
+    setDeletingUrl(url)
+    try {
+      const res = await callEdgeFunction('admin-bulk-import-resorts', {
+        action: 'delete_placeholder',
+        placeholder_url: url,
+      })
+
+      const affected = res.resorts_affected ?? 0
+      if (affected > 0) {
+        toast.success(`Deleted placeholder. ${affected} resort${affected === 1 ? '' : 's'} had cover cleared.`)
+      } else {
+        toast.success('Placeholder deleted')
+      }
+
+      setDeleteConfirmUrl(null)
+      await fetchPlaceholderUrls(true)
+      await loadPlaceholderCounts()
+      await log({
+        action: 'delete_placeholder',
+        entity_type: 'placeholder',
+        details: { url, resorts_affected: affected },
+      })
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Delete failed')
+    } finally {
+      setDeletingUrl(null)
+    }
+  }, [fetchPlaceholderUrls, loadPlaceholderCounts, log])
 
   // =========================================================================
   // COLUMN DEFINITIONS
@@ -2495,6 +2637,7 @@ export function BulkImportPage() {
           {/* ============================================================= */}
           <TabsContent value="placeholders">
             <div className="space-y-6">
+              {/* Stats */}
               {placeholdersLoading ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <Skeleton className="h-24 rounded-xl" />
@@ -2507,6 +2650,86 @@ export function BulkImportPage() {
                 </div>
               )}
 
+              {/* Upload section */}
+              <div className="bg-card border border-border rounded-xl p-6 space-y-4">
+                <div>
+                  <h3 className="text-sm font-semibold">Upload Placeholders</h3>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Select image(s) — auto-processed to 1200x800 WebP via Cloudinary before uploading to R2.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <input
+                    ref={uploadFileRef}
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    onChange={handlePlaceholderFileSelect}
+                    className="hidden"
+                  />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => uploadFileRef.current?.click()}
+                    disabled={uploadLoading}
+                    className="gap-2"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Select Images
+                  </Button>
+                  {uploadPreviews.length === 1 && (
+                    <div className="flex items-center gap-2">
+                      <Label htmlFor="custom-name" className="text-xs whitespace-nowrap">
+                        Custom name:
+                      </Label>
+                      <Input
+                        id="custom-name"
+                        placeholder="e.g. mountain-sunset (auto if blank)"
+                        value={uploadCustomName}
+                        onChange={(e) => setUploadCustomName(e.target.value)}
+                        className="h-8 text-xs w-64"
+                        disabled={uploadLoading}
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {uploadPreviews.length > 0 && (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs text-muted-foreground">
+                        {uploadPreviews.length} image{uploadPreviews.length === 1 ? '' : 's'} selected
+                      </p>
+                      <Button variant="ghost" size="sm" onClick={clearUploadState} className="text-xs">
+                        <X className="w-3 h-3 mr-1" /> Clear
+                      </Button>
+                    </div>
+                    <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2">
+                      {uploadPreviews.map(({ file, dataUrl }) => (
+                        <div
+                          key={file.name}
+                          className="aspect-[3/2] rounded-lg overflow-hidden border-2 border-primary/50 bg-muted relative"
+                        >
+                          <img src={dataUrl} alt={file.name} className="w-full h-full object-cover" />
+                          <div className="absolute bottom-0 left-0 right-0 bg-black/60 px-1 py-0.5">
+                            <p className="text-[10px] text-white truncate">{file.name}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <Button onClick={handleUploadPlaceholders} disabled={uploadLoading} className="gap-2">
+                      {uploadLoading ? (
+                        <><Loader2 className="w-4 h-4 animate-spin" /> Processing &amp; Uploading...</>
+                      ) : (
+                        <><Upload className="w-4 h-4" /> Upload {uploadPreviews.length} Image{uploadPreviews.length === 1 ? '' : 's'}</>
+                      )}
+                    </Button>
+                  </div>
+                )}
+              </div>
+
+              {/* Available Placeholders */}
               <div className="bg-card border border-border rounded-xl p-6 space-y-4">
                 <div className="flex items-center justify-between">
                   <div>
@@ -2514,7 +2737,7 @@ export function BulkImportPage() {
                     <p className="text-xs text-muted-foreground mt-1">
                       {placeholdersFetching
                         ? 'Loading from R2...'
-                        : `${discoveredPlaceholders.length} placeholder image${discoveredPlaceholders.length === 1 ? '' : 's'} discovered in R2`}
+                        : `${discoveredPlaceholders.length} placeholder image${discoveredPlaceholders.length === 1 ? '' : 's'} in R2`}
                     </p>
                   </div>
                   <Button
@@ -2531,16 +2754,31 @@ export function BulkImportPage() {
 
                 {discoveredPlaceholders.length > 0 && (
                   <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2">
-                    {discoveredPlaceholders.map((url) => (
-                      <div key={url} className="aspect-[3/2] rounded-lg overflow-hidden border border-border bg-muted">
-                        <img
-                          src={url}
-                          alt=""
-                          className="w-full h-full object-cover"
-                          loading="lazy"
-                        />
-                      </div>
-                    ))}
+                    {discoveredPlaceholders.map((url) => {
+                      const filename = url.split('/').pop() ?? ''
+                      const isDeleting = deletingUrl === url
+                      return (
+                        <div
+                          key={url}
+                          className="aspect-[3/2] rounded-lg overflow-hidden border border-border bg-muted relative group"
+                        >
+                          <img src={url} alt="" className="w-full h-full object-cover" loading="lazy" />
+                          {/* Delete button on hover */}
+                          <button
+                            onClick={() => setDeleteConfirmUrl(url)}
+                            disabled={isDeleting}
+                            className="absolute top-1 right-1 w-6 h-6 rounded-full bg-red-600/80 hover:bg-red-600 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                            title={`Delete ${filename}`}
+                          >
+                            {isDeleting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+                          </button>
+                          {/* Filename on hover */}
+                          <div className="absolute bottom-0 left-0 right-0 bg-black/60 px-1 py-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <p className="text-[10px] text-white truncate">{filename}</p>
+                          </div>
+                        </div>
+                      )
+                    })}
                   </div>
                 )}
 
@@ -2563,6 +2801,17 @@ export function BulkImportPage() {
                 </Button>
               </div>
             </div>
+
+            {/* Delete confirmation dialog */}
+            <ConfirmDialog
+              open={!!deleteConfirmUrl}
+              onOpenChange={(open) => { if (!open) setDeleteConfirmUrl(null) }}
+              title="Delete Placeholder"
+              description="Are you sure you want to delete this placeholder image? Any resorts using it will have their cover image cleared."
+              confirmLabel="Delete"
+              variant="destructive"
+              onConfirm={() => deleteConfirmUrl && handleDeletePlaceholder(deleteConfirmUrl)}
+            />
           </TabsContent>
         </Tabs>
       </div>
