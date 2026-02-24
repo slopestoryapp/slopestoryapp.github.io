@@ -55,8 +55,10 @@ interface Profile {
 interface Visit {
   id: string
   resort_id: string
-  visit_date: string | null
-  rating: number | null
+  start_date: string | null
+  rating_terrain: number | null
+  rating_facilities: number | null
+  rating_service: number | null
   resorts: { name: string } | null
 }
 
@@ -206,9 +208,9 @@ export function UsersPage() {
       // Load visits
       const { data: visitsData } = await supabase
         .from('user_visits')
-        .select('id, resort_id, visit_date, rating, resorts(name)')
+        .select('id, resort_id, start_date, rating_terrain, rating_facilities, rating_service, resorts(name)')
         .eq('user_id', user.id)
-        .order('visit_date', { ascending: false })
+        .order('start_date', { ascending: false })
 
       const loadedVisits = (visitsData as unknown as Visit[]) ?? []
       setVisits(loadedVisits)
@@ -560,12 +562,12 @@ export function UsersPage() {
                                     {v.resorts?.name ?? 'Unknown Resort'}
                                   </div>
                                   <div className="text-xs text-muted-foreground">
-                                    {formatDate(v.visit_date)}
+                                    {formatDate(v.start_date)}
                                   </div>
                                 </div>
-                                {v.rating != null && (
+                                {v.rating_terrain != null && (
                                   <Badge variant="secondary">
-                                    {v.rating}/5
+                                    {v.rating_terrain}/5
                                   </Badge>
                                 )}
                               </div>
