@@ -551,7 +551,7 @@ export function UsersPage() {
                             No visits recorded
                           </p>
                         ) : (
-                          <div className="divide-y divide-border mt-2">
+                          <div className="divide-y divide-border mt-2 max-h-[300px] overflow-y-auto">
                             {visits.map((v) => (
                               <div
                                 key={v.id}
@@ -591,7 +591,7 @@ export function UsersPage() {
                             No photos
                           </p>
                         ) : (
-                          <div className="grid grid-cols-3 gap-2 mt-2">
+                          <div className="grid grid-cols-3 gap-2 mt-2 max-h-[300px] overflow-y-auto">
                             {photos.map((p) => (
                               <img
                                 key={p.id}
@@ -616,7 +616,7 @@ export function UsersPage() {
                             No wishlist items
                           </p>
                         ) : (
-                          <div className="divide-y divide-border mt-2">
+                          <div className="divide-y divide-border mt-2 max-h-[300px] overflow-y-auto">
                             {wishlist.map((w) => (
                               <div key={w.id} className="py-2">
                                 <div className="text-sm font-medium">

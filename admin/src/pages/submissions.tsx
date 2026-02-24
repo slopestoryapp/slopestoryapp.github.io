@@ -654,7 +654,7 @@ Notes from submitter: ${selected.notes ?? 'None'}`
                           Potential Resort Matches
                         </span>
                       </div>
-                      <div className="space-y-1.5">
+                      <div className="space-y-1.5 max-h-[200px] overflow-y-auto">
                         {potentialMatches.map((m) => {
                           const sim = similarityBadge(m.similarity)
                           return (
@@ -697,7 +697,7 @@ Notes from submitter: ${selected.notes ?? 'None'}`
                           Duplicate Submissions ({duplicates.length})
                         </span>
                       </div>
-                      <div className="space-y-1 text-sm">
+                      <div className="space-y-1 text-sm max-h-[150px] overflow-y-auto">
                         {duplicates.map((d) => (
                           <div
                             key={d.id}
@@ -727,7 +727,7 @@ Notes from submitter: ${selected.notes ?? 'None'}`
                           Linked Visits ({linkedVisits.length})
                         </span>
                       </div>
-                      <div className="space-y-1 text-sm">
+                      <div className="space-y-1 text-sm max-h-[150px] overflow-y-auto">
                         {linkedVisits.map((v) => {
                           const profile = profileMap.get(v.user_id)
                           return (

@@ -185,18 +185,18 @@ export function OverviewPage() {
             </p>
           </div>
 
-          {loading ? (
-            <div className="p-5 space-y-3">
-              {Array.from({ length: 5 }).map((_, i) => (
-                <Skeleton key={i} className="h-10 rounded-lg" />
-              ))}
-            </div>
-          ) : activity.length === 0 ? (
-            <div className="p-5 text-center text-sm text-muted-foreground">
-              No recent activity
-            </div>
-          ) : (
-            <ScrollArea className="max-h-[400px]">
+          <ScrollArea className="max-h-[400px]">
+            {loading ? (
+              <div className="p-5 space-y-3">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <Skeleton key={i} className="h-10 rounded-lg" />
+                ))}
+              </div>
+            ) : activity.length === 0 ? (
+              <div className="p-5 text-center text-sm text-muted-foreground">
+                No recent activity
+              </div>
+            ) : (
               <div className="divide-y divide-border">
                 {activity.map((entry) => (
                   <div
@@ -224,8 +224,8 @@ export function OverviewPage() {
                   </div>
                 ))}
               </div>
-            </ScrollArea>
-          )}
+            )}
+          </ScrollArea>
         </div>
       </div>
     </div>
