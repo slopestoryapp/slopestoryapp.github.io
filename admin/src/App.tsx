@@ -17,6 +17,9 @@ import { AnalyticsPage } from '@/pages/analytics'
 import { ActivityPage } from '@/pages/activity'
 import { SystemPage } from '@/pages/system'
 import { BulkImportPage } from '@/pages/bulk-import'
+import { TestersPage } from '@/pages/testers'
+import { SendUpdatePage } from '@/pages/send-update'
+import { BetaFeedbackPage } from '@/pages/beta-feedback'
 import { supabase } from '@/lib/supabase'
 import type { PageId } from '@/lib/constants'
 import { Loader2 } from 'lucide-react'
@@ -95,6 +98,9 @@ export default function App() {
       case 'resorts': return <ResortsPage />
       case 'bulk-import': return <BulkImportPage />
       case 'users': return <UsersPage />
+      case 'testers': return <TestersPage />
+      case 'send-update': return <SendUpdatePage />
+      case 'beta-feedback': return <BetaFeedbackPage />
       case 'support': return <SupportPage />
       case 'roadmap': return <RoadmapPage />
       case 'visits': return <VisitsPage />

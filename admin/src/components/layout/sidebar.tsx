@@ -2,7 +2,7 @@ import { useState } from 'react'
 import {
   LayoutDashboard, Inbox, ImagePlus, Mountain, Users, LifeBuoy,
   Map, CalendarDays, BarChart3, ScrollText, Activity, LogOut, Menu, X,
-  Upload,
+  Upload, FlaskConical, Megaphone, MessageSquareHeart,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { PageId, NavItem } from '@/lib/constants'
@@ -11,6 +11,7 @@ import { NAV_ITEMS } from '@/lib/constants'
 const ICON_MAP: Record<string, React.FC<{ className?: string }>> = {
   LayoutDashboard, Inbox, ImagePlus, Mountain, Users, LifeBuoy,
   Map, CalendarDays, BarChart3, ScrollText, Activity, Upload,
+  FlaskConical, Megaphone, MessageSquareHeart,
 }
 
 interface SidebarProps {

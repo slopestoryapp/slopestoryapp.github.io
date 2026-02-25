@@ -13,6 +13,9 @@ export type PageId =
   | 'resorts'
   | 'bulk-import'
   | 'users'
+  | 'testers'
+  | 'send-update'
+  | 'beta-feedback'
   | 'support'
   | 'roadmap'
   | 'visits'
@@ -34,6 +37,9 @@ export const NAV_ITEMS: NavItem[] = [
   { id: 'resorts', label: 'Resorts', icon: 'Mountain' },
   { id: 'bulk-import', label: 'Bulk Import', icon: 'Upload' },
   { id: 'users', label: 'Users', icon: 'Users' },
+  { id: 'testers', label: 'Testers', icon: 'FlaskConical' },
+  { id: 'send-update', label: 'Send Update', icon: 'Megaphone' },
+  { id: 'beta-feedback', label: 'Beta Feedback', icon: 'MessageSquareHeart' },
   { id: 'support', label: 'Support', icon: 'LifeBuoy', badgeKey: 'pendingTickets' },
   { id: 'roadmap', label: 'Roadmap', icon: 'Map' },
   { id: 'visits', label: 'Visits', icon: 'CalendarDays' },
@@ -56,6 +62,12 @@ export const TICKET_STATUSES = [
   { value: 'in_progress', label: 'In Progress', color: 'text-blue-400 bg-blue-400/10' },
   { value: 'resolved', label: 'Resolved', color: 'text-green-400 bg-green-400/10' },
   { value: 'closed', label: 'Closed', color: 'text-slate-400 bg-slate-400/10' },
+]
+
+export const COHORTS = [
+  { value: 'phase1', label: 'Phase 1', color: 'text-blue-400 bg-blue-400/10' },
+  { value: 'phase2', label: 'Phase 2', color: 'text-purple-400 bg-purple-400/10' },
+  { value: 'phase3', label: 'Phase 3', color: 'text-green-400 bg-green-400/10' },
 ]
 
 export const ROADMAP_STATUSES = [
