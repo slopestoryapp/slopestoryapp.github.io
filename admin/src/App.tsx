@@ -12,6 +12,7 @@ import { ResortsPage } from '@/pages/resorts'
 import { UsersPage } from '@/pages/users'
 import { SupportPage } from '@/pages/support'
 import { RoadmapPage } from '@/pages/roadmap'
+import { KnowledgeBasePage } from '@/pages/knowledge-base'
 import { VisitsPage } from '@/pages/visits'
 import { AnalyticsPage } from '@/pages/analytics'
 import { ActivityPage } from '@/pages/activity'
@@ -103,6 +104,7 @@ export default function App() {
       case 'beta-feedback': return <BetaFeedbackPage />
       case 'support': return <SupportPage />
       case 'roadmap': return <RoadmapPage />
+      case 'knowledge-base': return <KnowledgeBasePage />
       case 'visits': return <VisitsPage />
       case 'analytics': return <AnalyticsPage />
       case 'activity': return <ActivityPage />

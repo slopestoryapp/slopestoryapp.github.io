@@ -18,6 +18,7 @@ export type PageId =
   | 'beta-feedback'
   | 'support'
   | 'roadmap'
+  | 'knowledge-base'
   | 'visits'
   | 'analytics'
   | 'activity'
@@ -42,6 +43,7 @@ export const NAV_ITEMS: NavItem[] = [
   { id: 'beta-feedback', label: 'Beta Feedback', icon: 'MessageSquareHeart' },
   { id: 'support', label: 'Support', icon: 'LifeBuoy', badgeKey: 'pendingTickets' },
   { id: 'roadmap', label: 'Roadmap', icon: 'Map' },
+  { id: 'knowledge-base', label: 'Knowledge Base', icon: 'BookOpen' },
   { id: 'visits', label: 'Visits', icon: 'CalendarDays' },
   { id: 'analytics', label: 'Analytics', icon: 'BarChart3' },
   { id: 'activity', label: 'Activity Log', icon: 'ScrollText' },
