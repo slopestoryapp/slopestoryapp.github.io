@@ -21,7 +21,6 @@ import {
   Loader2,
   ImageIcon,
   Plus,
-  Trash2,
   Search,
   Users,
   Link2,
@@ -141,7 +140,7 @@ export function SubmissionsPage() {
   const [statusFilter, setStatusFilter] = useState<'pending' | 'approved' | 'rejected'>('pending')
 
   // Confirm dialogs
-  const [confirmAction, setConfirmAction] = useState<'approve' | 'soft_reject' | 'hard_delete' | null>(null)
+  const [confirmAction, setConfirmAction] = useState<'approve' | 'reject' | null>(null)
   const [actionLoading, setActionLoading] = useState(false)
 
   // Approve: resort picker
@@ -301,7 +300,7 @@ export function SubmissionsPage() {
         action: 'soft_reject',
         submissionId: selected.id,
       })
-      toast.success(`Soft rejected: ${selected.resort_name} — visits preserved, user notified`)
+      toast.success(`Rejected: ${selected.resort_name} — visits preserved, user notified`)
       setSelected(null)
       setConfirmAction(null)
       loadSubmissions()
@@ -312,24 +311,6 @@ export function SubmissionsPage() {
     }
   }, [selected, loadSubmissions])
 
-  const handleHardDelete = useCallback(async () => {
-    if (!selected) return
-    setActionLoading(true)
-    try {
-      await callEdgeFunction('admin-manage-submission', {
-        action: 'hard_delete',
-        submissionId: selected.id,
-      })
-      toast.success(`Deleted: ${selected.resort_name} — submission + visits + photos removed`)
-      setSelected(null)
-      setConfirmAction(null)
-      loadSubmissions()
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to delete')
-    } finally {
-      setActionLoading(false)
-    }
-  }, [selected, loadSubmissions])
 
   // ---------------------------------------------------------------------------
   // Existing workflows: research prompt, process image, create resort
@@ -807,24 +788,17 @@ Notes from submitter: ${selected.notes ?? 'None'}`
                         </Button>
                         <Button
                           variant="outline"
-                          onClick={() => setConfirmAction('soft_reject')}
+                          onClick={() => setConfirmAction('reject')}
                           className="flex-1"
                         >
                           <X className="w-4 h-4 mr-1" />
-                          Soft Reject
-                        </Button>
-                        <Button
-                          variant="destructive"
-                          onClick={() => setConfirmAction('hard_delete')}
-                        >
-                          <Trash2 className="w-4 h-4" />
+                          Reject
                         </Button>
                       </div>
 
                       <div className="text-[11px] text-muted-foreground space-y-0.5">
                         <p><strong>Approve:</strong> Links to resort, backfills visits, cascades to duplicates, notifies user.</p>
-                        <p><strong>Soft Reject:</strong> Preserves visits (user can reassign), sends push notification.</p>
-                        <p><strong>Hard Delete:</strong> Permanently removes submission + visits + photos. For spam/test data only.</p>
+                        <p><strong>Reject:</strong> Preserves visits. User notified to contact support if they disagree.</p>
                       </div>
                     </div>
                   )}
@@ -862,7 +836,7 @@ Notes from submitter: ${selected.notes ?? 'None'}`
                     <li>If the resort has a photo, use Process Image to generate a cover image.</li>
                     <li>Paste Claude's JSON into Create Resort. The submission auto-approves and cascades to duplicates.</li>
                     <li>
-                      <strong className="text-foreground">Invalid?</strong> Soft Reject (preserves user visits) or Hard Delete (removes everything).
+                      <strong className="text-foreground">Invalid?</strong> Reject (preserves user visits; user notified to contact support).
                     </li>
                   </ol>
                 </div>
@@ -954,22 +928,13 @@ Notes from submitter: ${selected.notes ?? 'None'}`
         onConfirm={handleApprove}
       />
       <ConfirmDialog
-        open={confirmAction === 'soft_reject'}
+        open={confirmAction === 'reject'}
         onOpenChange={(open) => !open && setConfirmAction(null)}
-        title="Soft Reject Submission"
-        description={`Reject "${selected?.resort_name}"? User visits will be preserved and the user will be notified to reassign them to the correct resort.`}
-        confirmLabel={actionLoading ? 'Rejecting...' : 'Soft Reject'}
+        title="Reject Submission"
+        description={`Reject "${selected?.resort_name}"? User visits will be preserved and the user will be notified to contact support if they disagree.`}
+        confirmLabel={actionLoading ? 'Rejecting...' : 'Reject'}
         variant="destructive"
         onConfirm={handleSoftReject}
-      />
-      <ConfirmDialog
-        open={confirmAction === 'hard_delete'}
-        onOpenChange={(open) => !open && setConfirmAction(null)}
-        title="Permanently Delete"
-        description={`Permanently delete "${selected?.resort_name}" and ALL linked visits, photos, and data? This cannot be undone. Only use for spam or test submissions.`}
-        confirmLabel={actionLoading ? 'Deleting...' : 'Delete Forever'}
-        variant="destructive"
-        onConfirm={handleHardDelete}
       />
     </div>
   )
