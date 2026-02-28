@@ -292,15 +292,15 @@ export function SubmissionsPage() {
     }
   }, [selected, selectedResortId, loadSubmissions])
 
-  const handleSoftReject = useCallback(async () => {
+  const handleReject = useCallback(async () => {
     if (!selected) return
     setActionLoading(true)
     try {
       await callEdgeFunction('admin-manage-submission', {
-        action: 'soft_reject',
+        action: 'hard_delete',
         submissionId: selected.id,
       })
-      toast.success(`Rejected: ${selected.resort_name} — visits preserved, user notified`)
+      toast.success(`Rejected: ${selected.resort_name} — submission and visits removed, user notified`)
       setSelected(null)
       setConfirmAction(null)
       loadSubmissions()
@@ -798,7 +798,7 @@ Notes from submitter: ${selected.notes ?? 'None'}`
 
                       <div className="text-[11px] text-muted-foreground space-y-0.5">
                         <p><strong>Approve:</strong> Links to resort, backfills visits, cascades to duplicates, notifies user.</p>
-                        <p><strong>Reject:</strong> Preserves visits. User notified to contact support if they disagree.</p>
+                        <p><strong>Reject:</strong> Removes submission and all linked visits/photos. User notified to contact support.</p>
                       </div>
                     </div>
                   )}
@@ -836,7 +836,7 @@ Notes from submitter: ${selected.notes ?? 'None'}`
                     <li>If the resort has a photo, use Process Image to generate a cover image.</li>
                     <li>Paste Claude's JSON into Create Resort. The submission auto-approves and cascades to duplicates.</li>
                     <li>
-                      <strong className="text-foreground">Invalid?</strong> Reject (preserves user visits; user notified to contact support).
+                      <strong className="text-foreground">Invalid?</strong> Reject (removes submission and visits; user must start again; notified to contact support).
                     </li>
                   </ol>
                 </div>
@@ -931,10 +931,10 @@ Notes from submitter: ${selected.notes ?? 'None'}`
         open={confirmAction === 'reject'}
         onOpenChange={(open) => !open && setConfirmAction(null)}
         title="Reject Submission"
-        description={`Reject "${selected?.resort_name}"? User visits will be preserved and the user will be notified to contact support if they disagree.`}
+        description={`Reject "${selected?.resort_name}"? This will permanently remove the submission and all linked visits/photos. The user will be notified to contact support.`}
         confirmLabel={actionLoading ? 'Rejecting...' : 'Reject'}
         variant="destructive"
-        onConfirm={handleSoftReject}
+        onConfirm={handleReject}
       />
     </div>
   )
