@@ -5,9 +5,13 @@ import { Header } from '@/components/layout/header'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Switch } from '@/components/ui/switch'
+import { useAuditLog } from '@/hooks/use-audit-log'
+import { timeAgo } from '@/lib/utils'
 import {
   Activity,
   AlertTriangle,
+  Bot,
   Cloud,
   Database,
   ExternalLink,
@@ -31,6 +35,13 @@ interface TableStat {
 interface EdgeFunction {
   name: string
   description: string
+}
+
+interface AppConfigRow {
+  key: string
+  value: boolean
+  updated_at: string
+  updated_by: string | null
 }
 
 // ---------------------------------------------------------------------------
@@ -116,6 +127,77 @@ export function SystemPage() {
   const [stats, setStats] = useState<TableStat[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+
+  // AI kill switch state
+  const [aiConfigs, setAiConfigs] = useState<AppConfigRow[]>([])
+  const [aiConfigLoading, setAiConfigLoading] = useState(true)
+  const [togglingKey, setTogglingKey] = useState<string | null>(null)
+  const { log } = useAuditLog()
+
+  const fetchAiConfigs = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('app_config')
+        .select('key, value, updated_at, updated_by')
+        .in('key', ['ai_discovery_enabled', 'ai_summary_enabled'])
+        .order('key')
+      if (error) throw error
+      setAiConfigs((data as AppConfigRow[]) ?? [])
+    } catch (err) {
+      console.error('Failed to load AI config:', err)
+    } finally {
+      setAiConfigLoading(false)
+    }
+  }, [])
+
+  const toggleAiConfig = useCallback(
+    async (key: string, enabled: boolean) => {
+      setTogglingKey(key)
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        const adminEmail = session?.user?.email ?? 'unknown'
+
+        const { error } = await supabase
+          .from('app_config')
+          .update({
+            value: enabled,
+            updated_at: new Date().toISOString(),
+            updated_by: adminEmail,
+          })
+          .eq('key', key)
+
+        if (error) throw error
+
+        toast.success(`AI ${enabled ? 'enabled' : 'paused'}`)
+
+        await log({
+          action: `toggle_${key}`,
+          entity_type: 'app_config',
+          entity_id: key,
+          details: { enabled },
+        })
+
+        // Refresh config state
+        setAiConfigs((prev) =>
+          prev.map((c) =>
+            c.key === key
+              ? { ...c, value: enabled, updated_at: new Date().toISOString(), updated_by: adminEmail }
+              : c,
+          ),
+        )
+      } catch (err) {
+        console.error('Failed to toggle AI config:', err)
+        toast.error('Failed to update AI config')
+      } finally {
+        setTogglingKey(null)
+      }
+    },
+    [log],
+  )
+
+  useEffect(() => {
+    fetchAiConfigs()
+  }, [fetchAiConfigs])
 
   const fetchStats = useCallback(async (showRefresh = false) => {
     if (showRefresh) setRefreshing(true)
@@ -222,7 +304,7 @@ export function SystemPage() {
       <Header
         title="System Health"
         subtitle="Database stats, storage, and edge functions"
-        onRefresh={() => fetchStats(true)}
+        onRefresh={() => { fetchStats(true); fetchAiConfigs() }}
         refreshing={refreshing}
       />
 
@@ -274,6 +356,77 @@ export function SystemPage() {
               </div>
             </CardContent>
           </Card>
+        </section>
+
+        {/* AI Service Controls */}
+        <section>
+          <div className="flex items-center gap-2 mb-4">
+            <Bot className="w-5 h-5 text-primary" />
+            <h2 className="text-base font-semibold">AI Service Controls</h2>
+          </div>
+
+          {aiConfigLoading ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Skeleton className="h-32 rounded-xl" />
+              <Skeleton className="h-32 rounded-xl" />
+            </div>
+          ) : aiConfigs.length === 0 ? (
+            <Card className="border-dashed">
+              <CardContent className="p-6">
+                <p className="text-sm text-muted-foreground">
+                  No AI config rows found. The <code>app_config</code> table may not be seeded yet.
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {aiConfigs.map((config) => {
+                const isDiscovery = config.key === 'ai_discovery_enabled'
+                const label = isDiscovery ? 'AI Discovery' : 'AI Summaries'
+                const subtitle = isDiscovery ? 'Resort Recommendations' : 'Album & Visit'
+                const description = isDiscovery
+                  ? 'Claude Haiku generates personalized resort picks. When off: users get template recommendations.'
+                  : 'Claude Haiku generates trip summaries. When off: users see "AI unavailable" message.'
+                const enabled = config.value === true
+                const toggling = togglingKey === config.key
+
+                return (
+                  <Card key={config.key}>
+                    <CardContent className="p-5">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-sm font-semibold">{label}</span>
+                            <span className="text-xs text-muted-foreground">({subtitle})</span>
+                          </div>
+                          <p className="text-xs text-muted-foreground leading-relaxed mb-3">
+                            {description}
+                          </p>
+                          <div className="flex items-center gap-2">
+                            <Badge variant={enabled ? 'default' : 'destructive'} className="text-[10px]">
+                              {enabled ? 'Enabled' : 'Paused'}
+                            </Badge>
+                            {config.updated_at && (
+                              <span className="text-[10px] text-muted-foreground">
+                                Updated {timeAgo(config.updated_at)}
+                                {config.updated_by ? ` by ${config.updated_by}` : ''}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <Switch
+                          checked={enabled}
+                          disabled={toggling}
+                          onCheckedChange={(checked) => toggleAiConfig(config.key, checked)}
+                          aria-label={`Toggle ${label}`}
+                        />
+                      </div>
+                    </CardContent>
+                  </Card>
+                )
+              })}
+            </div>
+          )}
         </section>
 
         {/* Edge Functions */}
