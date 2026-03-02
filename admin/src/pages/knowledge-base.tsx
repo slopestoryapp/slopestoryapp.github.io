@@ -24,7 +24,7 @@ import {
 } from '@/components/ui/select'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Loader2, Pencil, Plus, Trash2 } from 'lucide-react'
+import { Eye, Loader2, Pencil, Plus, Trash2 } from 'lucide-react'
 
 interface SupportKbRow {
   id: string
@@ -81,6 +81,7 @@ export function KnowledgeBasePage() {
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
   const [saving, setSaving] = useState(false)
 
+  const [viewTarget, setViewTarget] = useState<SupportKbRow | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<SupportKbRow | null>(null)
 
   const fetchData = useCallback(async (showRefresh = false) => {
@@ -323,6 +324,9 @@ export function KnowledgeBasePage() {
                   <p className="text-xs text-muted-foreground truncate">{row.slug}</p>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
+                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setViewTarget(row)}>
+                    <Eye className="w-3 h-3" />
+                  </Button>
                   <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(row)}>
                     <Pencil className="w-3 h-3" />
                   </Button>
@@ -436,6 +440,55 @@ export function KnowledgeBasePage() {
             <Button onClick={handleDialogSave} disabled={saving}>
               {saving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               {dialogMode === 'edit' ? 'Save Changes' : 'Create'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* View Article Dialog */}
+      <Dialog open={!!viewTarget} onOpenChange={(open) => !open && setViewTarget(null)}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{viewTarget?.title}</DialogTitle>
+            <DialogDescription>
+              <div className="flex items-center gap-2 mt-2">
+                <Badge variant={viewTarget?.type === 'kb' ? 'default' : 'secondary'} className="text-xs">
+                  {viewTarget?.type.toUpperCase()}
+                </Badge>
+                <Badge variant="outline" className="text-xs">
+                  {viewTarget?.audience === 'admin' ? 'Admin Docs' : 'User Support'}
+                </Badge>
+                {viewTarget?.keywords && viewTarget.keywords.length > 0 && (
+                  <span className="text-xs text-muted-foreground">
+                    Keywords: {viewTarget.keywords.join(', ')}
+                  </span>
+                )}
+              </div>
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="py-4">
+            {viewTarget?.content ? (
+              <div className="prose prose-sm dark:prose-invert max-w-none whitespace-pre-wrap">
+                {viewTarget.content}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground italic">No content</p>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setViewTarget(null)}>
+              Close
+            </Button>
+            <Button onClick={() => {
+              if (viewTarget) {
+                openEdit(viewTarget)
+                setViewTarget(null)
+              }
+            }}>
+              <Pencil className="w-3 h-3 mr-2" />
+              Edit
             </Button>
           </DialogFooter>
         </DialogContent>

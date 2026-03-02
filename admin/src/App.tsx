@@ -26,7 +26,7 @@ import type { PageId } from '@/lib/constants'
 import { Loader2 } from 'lucide-react'
 
 export default function App() {
-  const { user, loading, error, isAdmin, signIn, signOut } = useAuth()
+  const { user, loading, error, isAdmin, signIn, signOut, unlocking } = useAuth()
   const [currentPage, setCurrentPage] = useState<PageId>('overview')
   const [searchOpen, setSearchOpen] = useState(false)
   const [badges, setBadges] = useState<Record<string, number>>({})
@@ -85,7 +85,7 @@ export default function App() {
   if (!user || !isAdmin) {
     return (
       <>
-        <LoginPage onSignIn={signIn} loading={loading} error={error} />
+        <LoginPage onSignIn={signIn} loading={loading} error={error} unlocking={unlocking} />
         <Toaster theme="dark" position="top-right" richColors />
       </>
     )
