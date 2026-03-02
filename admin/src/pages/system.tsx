@@ -44,6 +44,18 @@ interface AppConfigRow {
   updated_by: string | null
 }
 
+interface SyncMetrics {
+  deletions_24h: number | null
+  deletions_7d: number | null
+  active_users_1h: number | null
+  active_users_24h: number | null
+  active_users_7d: number | null
+  users_with_visits: number | null
+  users_with_photos: number | null
+  total_deletions: number | null
+  deletion_by_table: { table: string; count: number }[]
+}
+
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
@@ -132,6 +144,11 @@ export function SystemPage() {
   const [aiConfigs, setAiConfigs] = useState<AppConfigRow[]>([])
   const [aiConfigLoading, setAiConfigLoading] = useState(true)
   const [togglingKey, setTogglingKey] = useState<string | null>(null)
+
+  // WDB sync metrics state
+  const [syncMetrics, setSyncMetrics] = useState<SyncMetrics | null>(null)
+  const [syncMetricsLoading, setSyncMetricsLoading] = useState(true)
+
   const { log } = useAuditLog()
 
   const fetchAiConfigs = useCallback(async () => {
@@ -147,6 +164,89 @@ export function SystemPage() {
       console.error('Failed to load AI config:', err)
     } finally {
       setAiConfigLoading(false)
+    }
+  }, [])
+
+  const fetchSyncMetrics = useCallback(async () => {
+    setSyncMetricsLoading(true)
+    try {
+      const now = new Date()
+      const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000)
+      const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+      const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000)
+
+      // Recent deletions
+      const [deletions24hRes, deletions7dRes, totalDeletionsRes, deletionsByTableRes] = await Promise.all([
+        supabase.from('deleted_records').select('*', { count: 'exact', head: true }).gte('deleted_at', oneDayAgo.toISOString()),
+        supabase.from('deleted_records').select('*', { count: 'exact', head: true }).gte('deleted_at', sevenDaysAgo.toISOString()),
+        supabase.from('deleted_records').select('*', { count: 'exact', head: true }),
+        supabase.from('deleted_records').select('table_name'),
+      ])
+
+      // Active users (users with recent data updates from visits or photos)
+      const [visitsUsers1h, visitsUsers24h, visitsUsers7d, photosUsers1h, photosUsers24h, photosUsers7d] = await Promise.all([
+        supabase.from('user_visits').select('user_id').gte('updated_at', oneHourAgo.toISOString()),
+        supabase.from('user_visits').select('user_id').gte('updated_at', oneDayAgo.toISOString()),
+        supabase.from('user_visits').select('user_id').gte('updated_at', sevenDaysAgo.toISOString()),
+        supabase.from('user_photos').select('visit_id!inner(user_id)').gte('updated_at', oneHourAgo.toISOString()),
+        supabase.from('user_photos').select('visit_id!inner(user_id)').gte('updated_at', oneDayAgo.toISOString()),
+        supabase.from('user_photos').select('visit_id!inner(user_id)').gte('updated_at', sevenDaysAgo.toISOString()),
+      ])
+
+      // Count distinct users from visits and photos
+      const getUniqueUserCount = (visitsData: any[], photosData: any[]) => {
+        const userIds = new Set<string>()
+        visitsData?.forEach((v) => v.user_id && userIds.add(v.user_id))
+        photosData?.forEach((p: any) => {
+          const userId = p?.visit_id?.user_id
+          if (userId) userIds.add(userId)
+        })
+        return userIds.size
+      }
+
+      const activeUsers1h = getUniqueUserCount(visitsUsers1h.data || [], photosUsers1h.data || [])
+      const activeUsers24h = getUniqueUserCount(visitsUsers24h.data || [], photosUsers24h.data || [])
+      const activeUsers7d = getUniqueUserCount(visitsUsers7d.data || [], photosUsers7d.data || [])
+
+      // Data health - count distinct users with visits or photos
+      const [allVisitsRes, allPhotosRes] = await Promise.all([
+        supabase.from('user_visits').select('user_id'),
+        supabase.from('user_photos').select('visit_id!inner(user_id)'),
+      ])
+
+      const usersWithVisits = new Set(allVisitsRes.data?.map((v: any) => v.user_id) || []).size
+      const usersWithPhotos = new Set(
+        allPhotosRes.data?.map((p: any) => p?.visit_id?.user_id).filter(Boolean) || []
+      ).size
+
+      // Process deletion by table
+      const deletionCounts: Record<string, number> = {}
+      if (deletionsByTableRes.data) {
+        for (const record of deletionsByTableRes.data) {
+          const table = record.table_name || 'unknown'
+          deletionCounts[table] = (deletionCounts[table] || 0) + 1
+        }
+      }
+      const deletionByTable = Object.entries(deletionCounts)
+        .map(([table, count]) => ({ table, count }))
+        .sort((a, b) => b.count - a.count)
+
+      setSyncMetrics({
+        deletions_24h: deletions24hRes.count,
+        deletions_7d: deletions7dRes.count,
+        total_deletions: totalDeletionsRes.count,
+        deletion_by_table: deletionByTable,
+        active_users_1h: activeUsers1h,
+        active_users_24h: activeUsers24h,
+        active_users_7d: activeUsers7d,
+        users_with_visits: usersWithVisits,
+        users_with_photos: usersWithPhotos,
+      })
+    } catch (err) {
+      console.error('Failed to load WDB sync metrics:', err)
+      setSyncMetrics(null)
+    } finally {
+      setSyncMetricsLoading(false)
     }
   }, [])
 
@@ -197,7 +297,8 @@ export function SystemPage() {
 
   useEffect(() => {
     fetchAiConfigs()
-  }, [fetchAiConfigs])
+    fetchSyncMetrics()
+  }, [fetchAiConfigs, fetchSyncMetrics])
 
   const fetchStats = useCallback(async (showRefresh = false) => {
     if (showRefresh) setRefreshing(true)
@@ -304,7 +405,7 @@ export function SystemPage() {
       <Header
         title="System Health"
         subtitle="Database stats, storage, and edge functions"
-        onRefresh={() => { fetchStats(true); fetchAiConfigs() }}
+        onRefresh={() => { fetchStats(true); fetchAiConfigs(); fetchSyncMetrics() }}
         refreshing={refreshing}
       />
 
@@ -465,23 +566,118 @@ export function SystemPage() {
 
         {/* WatermelonDB Sync Status */}
         <section>
-          <div className="flex items-center gap-2 mb-4">
-            <Activity className="w-5 h-5 text-primary" />
-            <h2 className="text-base font-semibold">WatermelonDB Sync Status</h2>
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <Activity className="w-5 h-5 text-primary" />
+              <h2 className="text-base font-semibold">WatermelonDB Sync Activity</h2>
+            </div>
+            <a
+              href={`${SUPABASE_DASHBOARD_BASE}/functions/sync/logs`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
+            >
+              View Sync Function Logs
+              <ExternalLink className="w-3.5 h-3.5" />
+            </a>
           </div>
 
-          <Card className="border-dashed">
-            <CardHeader>
-              <CardTitle className="text-sm flex items-center gap-2">
-                <Loader2 className="w-4 h-4 text-muted-foreground" />
-                Coming Soon
-              </CardTitle>
-              <CardDescription>
-                WatermelonDB sync monitoring will be available when offline sync is enabled. This will
-                show sync health, conflict rates, and last sync timestamps per user.
-              </CardDescription>
-            </CardHeader>
-          </Card>
+          {syncMetricsLoading ? (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <Skeleton className="h-32 rounded-xl" />
+              <Skeleton className="h-32 rounded-xl" />
+              <Skeleton className="h-32 rounded-xl" />
+            </div>
+          ) : !syncMetrics ? (
+            <Card className="border-dashed">
+              <CardContent className="p-6">
+                <p className="text-sm text-muted-foreground">
+                  Failed to load sync metrics. Try refreshing the page.
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              {/* Recent Deletions */}
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">Recent Deletions</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    <div>
+                      <div className="text-2xl font-bold">{syncMetrics.deletions_24h ?? 0}</div>
+                      <p className="text-xs text-muted-foreground">Last 24 hours</p>
+                    </div>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-muted-foreground">Last 7 days</span>
+                      <span className="font-medium">{syncMetrics.deletions_7d ?? 0}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-muted-foreground">Total</span>
+                      <span className="font-medium">{syncMetrics.total_deletions ?? 0}</span>
+                    </div>
+                    {syncMetrics.deletion_by_table.length > 0 && (
+                      <div className="pt-2 border-t border-border">
+                        <p className="text-xs text-muted-foreground mb-1">By Table</p>
+                        <div className="flex flex-wrap gap-1">
+                          {syncMetrics.deletion_by_table.slice(0, 3).map((item) => (
+                            <Badge key={item.table} variant="outline" className="text-[10px]">
+                              {item.table}: {item.count}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Active Users */}
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">Active Users</CardTitle>
+                  <CardDescription className="text-xs">Users with data updates</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    <div>
+                      <div className="text-2xl font-bold">{syncMetrics.active_users_24h ?? 0}</div>
+                      <p className="text-xs text-muted-foreground">Last 24 hours</p>
+                    </div>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-muted-foreground">Last 1 hour</span>
+                      <span className="font-medium">{syncMetrics.active_users_1h ?? 0}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-muted-foreground">Last 7 days</span>
+                      <span className="font-medium">{syncMetrics.active_users_7d ?? 0}</span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Data Health */}
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">Data Health</CardTitle>
+                  <CardDescription className="text-xs">Users with synced data</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    <div>
+                      <div className="text-2xl font-bold">{syncMetrics.users_with_visits ?? 0}</div>
+                      <p className="text-xs text-muted-foreground">Users with visits</p>
+                    </div>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-muted-foreground">Users with photos</span>
+                      <span className="font-medium">{syncMetrics.users_with_photos ?? 0}</span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
         </section>
       </div>
     </div>

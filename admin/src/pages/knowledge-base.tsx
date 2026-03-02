@@ -29,6 +29,7 @@ import { Loader2, Pencil, Plus, Trash2 } from 'lucide-react'
 interface SupportKbRow {
   id: string
   type: 'kb' | 'faq'
+  audience: 'user' | 'admin'
   title: string
   slug: string
   content: string | null
@@ -39,6 +40,7 @@ interface SupportKbRow {
 
 interface FormState {
   type: 'kb' | 'faq'
+  audience: 'user' | 'admin'
   title: string
   slug: string
   content: string
@@ -48,6 +50,7 @@ interface FormState {
 
 const EMPTY_FORM: FormState = {
   type: 'kb',
+  audience: 'user',
   title: '',
   slug: '',
   content: '',
@@ -69,6 +72,7 @@ export function KnowledgeBasePage() {
   const [items, setItems] = useState<SupportKbRow[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+  const [audienceFilter, setAudienceFilter] = useState<'user' | 'admin'>('user')
   const [typeFilter, setTypeFilter] = useState<'all' | 'kb' | 'faq'>('all')
 
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -86,7 +90,7 @@ export function KnowledgeBasePage() {
     try {
       const { data, error } = await supabase
         .from('support_kb')
-        .select('id, type, title, slug, content, keywords, sort_order, created_at')
+        .select('id, type, audience, title, slug, content, keywords, sort_order, created_at')
         .order('sort_order')
         .order('title')
 
@@ -105,13 +109,16 @@ export function KnowledgeBasePage() {
     fetchData()
   }, [fetchData])
 
-  const filteredItems = items.filter((i) => (typeFilter === 'all' ? true : i.type === typeFilter))
+  const filteredItems = items
+    .filter((i) => i.audience === audienceFilter)
+    .filter((i) => (typeFilter === 'all' ? true : i.type === typeFilter))
 
   const openAdd = () => {
     setDialogMode('add')
     setEditTarget(null)
     setForm({
       ...EMPTY_FORM,
+      audience: audienceFilter, // Default to current filter
       sort_order: items.length,
     })
     setDialogOpen(true)
@@ -122,6 +129,7 @@ export function KnowledgeBasePage() {
     setEditTarget(row)
     setForm({
       type: row.type,
+      audience: row.audience,
       title: row.title,
       slug: row.slug,
       content: row.content ?? '',
@@ -153,6 +161,7 @@ export function KnowledgeBasePage() {
       if (dialogMode === 'add') {
         const { error } = await supabase.from('support_kb').insert({
           type: form.type,
+          audience: form.audience,
           title,
           slug,
           content: form.content.trim() || null,
@@ -162,15 +171,16 @@ export function KnowledgeBasePage() {
         if (error) throw error
         toast.success('Article created')
         await log({
-          action: 'create_resort',
+          action: 'create_kb_article',
           entity_type: 'support_kb',
-          details: { title, type: form.type },
+          details: { title, type: form.type, audience: form.audience },
         })
       } else if (editTarget) {
         const { error } = await supabase
           .from('support_kb')
           .update({
             type: form.type,
+            audience: form.audience,
             title,
             slug,
             content: form.content.trim() || null,
@@ -181,10 +191,10 @@ export function KnowledgeBasePage() {
         if (error) throw error
         toast.success('Article updated')
         await log({
-          action: 'edit_resort',
+          action: 'edit_kb_article',
           entity_type: 'support_kb',
           entity_id: editTarget.id,
-          details: { title },
+          details: { title, audience: form.audience },
         })
       }
       setDialogOpen(false)
@@ -221,12 +231,32 @@ export function KnowledgeBasePage() {
     <div className="flex flex-col h-full">
       <Header
         title="Knowledge Base"
-        subtitle="Manage KB and FAQ content for the support page"
+        subtitle="Manage user support content and internal admin documentation"
         onRefresh={() => fetchData(true)}
         refreshing={refreshing}
       />
 
       <div className="flex-1 overflow-auto p-6 space-y-6">
+        {/* Audience Toggle */}
+        <div className="flex items-center gap-2 p-1 bg-muted rounded-lg w-fit">
+          <Button
+            variant={audienceFilter === 'user' ? 'default' : 'ghost'}
+            size="sm"
+            onClick={() => setAudienceFilter('user')}
+            className="h-8"
+          >
+            User Support
+          </Button>
+          <Button
+            variant={audienceFilter === 'admin' ? 'default' : 'ghost'}
+            size="sm"
+            onClick={() => setAudienceFilter('admin')}
+            className="h-8"
+          >
+            Admin Docs
+          </Button>
+        </div>
+
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-2">
             <Select value={typeFilter} onValueChange={(v) => setTypeFilter(v as 'all' | 'kb' | 'faq')}>
@@ -278,9 +308,16 @@ export function KnowledgeBasePage() {
                 key={row.id}
                 className="flex items-center gap-4 p-4 rounded-lg border border-border bg-card hover:border-primary/30 transition-colors"
               >
-                <Badge variant={row.type === 'kb' ? 'default' : 'secondary'} className="text-xs shrink-0">
-                  {row.type.toUpperCase()}
-                </Badge>
+                <div className="flex items-center gap-2 shrink-0">
+                  <Badge variant={row.type === 'kb' ? 'default' : 'secondary'} className="text-xs">
+                    {row.type.toUpperCase()}
+                  </Badge>
+                  {row.audience === 'admin' && (
+                    <Badge variant="outline" className="text-xs">
+                      Admin
+                    </Badge>
+                  )}
+                </div>
                 <div className="flex-1 min-w-0">
                   <p className="font-medium truncate">{row.title}</p>
                   <p className="text-xs text-muted-foreground truncate">{row.slug}</p>
@@ -309,13 +346,28 @@ export function KnowledgeBasePage() {
           <DialogHeader>
             <DialogTitle>{dialogMode === 'add' ? 'Add Article' : 'Edit Article'}</DialogTitle>
             <DialogDescription>
-              {form.type === 'kb'
-                ? 'Knowledge base articles appear as cards on the support page.'
-                : 'FAQ items appear in an accordion on the support page.'}
+              {form.audience === 'user'
+                ? form.type === 'kb'
+                  ? 'User-facing KB articles appear as cards on the public support page.'
+                  : 'User-facing FAQ items appear in an accordion on the public support page.'
+                : 'Admin docs are internal documentation visible only in this dashboard.'}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label>Audience</Label>
+              <Select value={form.audience} onValueChange={(v) => setForm((f) => ({ ...f, audience: v as 'user' | 'admin' }))}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="user">User Support (Public)</SelectItem>
+                  <SelectItem value="admin">Admin Docs (Internal)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
             <div className="space-y-2">
               <Label>Type</Label>
               <Select value={form.type} onValueChange={(v) => setForm((f) => ({ ...f, type: v as 'kb' | 'faq' }))}>
