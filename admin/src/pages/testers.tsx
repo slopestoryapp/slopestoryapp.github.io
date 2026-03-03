@@ -37,6 +37,7 @@ interface Tester {
   email: string
   name: string | null
   cohort: string
+  source: string | null
   opted_in: boolean
   added_at: string
 }
@@ -45,10 +46,25 @@ interface TesterForm {
   email: string
   name: string
   cohort: string
+  source: string
   opted_in: boolean
 }
 
-const EMPTY_FORM: TesterForm = { email: '', name: '', cohort: 'phase1', opted_in: true }
+const EMPTY_FORM: TesterForm = { email: '', name: '', cohort: 'phase1', source: '', opted_in: true }
+
+const SOURCE_OPTIONS = [
+  { value: '', label: 'None' },
+  { value: 'manual', label: 'Manual' },
+  { value: 'waitlist', label: 'Waitlist' },
+  { value: 'reddit', label: 'Reddit' },
+  { value: 'facebook', label: 'Facebook' },
+  { value: 'instagram', label: 'Instagram' },
+  { value: 'threads', label: 'Threads' },
+  { value: 'tiktok', label: 'TikTok' },
+  { value: 'google', label: 'Google' },
+  { value: 'friend', label: 'Friend' },
+  { value: 'other', label: 'Other' },
+] as const
 
 export function TestersPage() {
   const { log } = useAuditLog()
@@ -112,6 +128,7 @@ export function TestersPage() {
       email: tester.email,
       name: tester.name ?? '',
       cohort: tester.cohort,
+      source: tester.source ?? '',
       opted_in: tester.opted_in,
     })
     setDialogMode('edit')
@@ -137,6 +154,7 @@ export function TestersPage() {
           email,
           name: form.name.trim() || null,
           cohort: form.cohort,
+          source: form.source || null,
           opted_in: form.opted_in,
         })
         if (error) throw error
@@ -154,6 +172,7 @@ export function TestersPage() {
             email,
             name: form.name.trim() || null,
             cohort: form.cohort,
+            source: form.source || null,
             opted_in: form.opted_in,
           })
           .eq('id', editTarget.id)
@@ -227,6 +246,15 @@ export function TestersPage() {
             </span>
           )
         },
+      },
+      {
+        accessorKey: 'source',
+        header: 'Source',
+        cell: ({ row }) => (
+          <span className="text-xs text-muted-foreground capitalize">
+            {row.original.source ?? '—'}
+          </span>
+        ),
       },
       {
         accessorKey: 'opted_in',
@@ -400,6 +428,24 @@ export function TestersPage() {
                   {COHORTS.map((c) => (
                     <SelectItem key={c.value} value={c.value}>
                       {c.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Source (optional)</Label>
+              <Select
+                value={form.source || '__none__'}
+                onValueChange={(v) => setForm((f) => ({ ...f, source: v === '__none__' ? '' : v }))}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {SOURCE_OPTIONS.map((s) => (
+                    <SelectItem key={s.value || '__none__'} value={s.value || '__none__'}>
+                      {s.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
