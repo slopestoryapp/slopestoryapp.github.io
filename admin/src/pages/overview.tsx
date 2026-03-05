@@ -673,7 +673,7 @@ export function OverviewPage({
               >
                 <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
                   <Key className="w-3.5 h-3.5" />
-                  Apple Key
+                  Apple Cert
                 </div>
                 {appleConfig?.expires_at ? (
                   <>
@@ -692,8 +692,8 @@ export function OverviewPage({
                     </div>
                     <div className="text-[10px] text-muted-foreground">
                       {appleKeyDays !== null && appleKeyDays > 0
-                        ? 'until rotation'
-                        : 'EXPIRED — rotate now'}
+                        ? 'until expiry'
+                        : 'EXPIRED — renew now'}
                     </div>
                   </>
                 ) : (
@@ -880,7 +880,7 @@ export function OverviewPage({
             <div className="space-y-2">
               <h4 className="text-xs font-semibold flex items-center gap-1.5">
                 <Key className="w-3.5 h-3.5" />
-                Apple Key Rotation
+                Apple Certificate
               </h4>
               <div className="grid grid-cols-2 gap-3">
                 <div>
