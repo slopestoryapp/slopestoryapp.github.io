@@ -252,6 +252,8 @@ export function SubmissionsPage() {
       setCreateResortJson('')
       setResortData(null)
       setResortDataError('')
+      setMissingRequired([])
+      setMissingOptional([])
       loadDetail(sub)
     },
     [loadDetail],
@@ -356,6 +358,7 @@ export function SubmissionsPage() {
 - **coordinates**: lat/lng must be the base area / main village, not the summit. 6 decimal places. Cross-check with Google Maps.
 - **beginner_pct + intermediate_pct + advanced_pct** must sum to 100 (or all null if unknown).
 - **Is it real?**: Confirm the resort actually exists and is operational. Flag if fabricated, permanently closed, heli/cat-ski only, indoor, or dry slope.
+- **instagram_handle**: DON'T include the @ symbol. Just the handle (e.g. "vaboreal", not "@vaboreal").
 
 ## pass_affiliation values
 Use the major global pass name if applicable: "Epic Pass", "Ikon Pass", "Mountain Collective", "Indy Pass".
@@ -408,10 +411,24 @@ Notes from submitter: ${selected.notes ?? 'None'}`
     toast.success('Research prompt copied to clipboard')
   }, [generateResearchPrompt])
 
+  // Fields expected from Claude's research output, split by DB constraint
+  const REQUIRED_FIELDS = ['name', 'country', 'country_code', 'region', 'lat', 'lng'] as const
+  const OPTIONAL_FIELDS = [
+    'website', 'vertical_m', 'runs', 'lifts', 'annual_snowfall_cm',
+    'beginner_pct', 'intermediate_pct', 'advanced_pct',
+    'season_open', 'season_close', 'has_night_skiing',
+    'pass_affiliation', 'instagram_handle', 'budget_tier', 'description',
+  ] as const
+
+  const [missingRequired, setMissingRequired] = useState<string[]>([])
+  const [missingOptional, setMissingOptional] = useState<string[]>([])
+
   const handleParseResortData = useCallback(() => {
     if (!createResortJson.trim()) {
       setResortDataError('Paste Claude\'s JSON output first')
       setResortData(null)
+      setMissingRequired([])
+      setMissingOptional([])
       return
     }
     try {
@@ -419,16 +436,36 @@ Notes from submitter: ${selected.notes ?? 'None'}`
       if (!parsed.name || !parsed.country) {
         setResortDataError('JSON must include at least "name" and "country"')
         setResortData(null)
+        setMissingRequired([])
+        setMissingOptional([])
         return
       }
+
+      // Check for null/empty/missing fields
+      const isEmpty = (v: unknown) => v === null || v === undefined || v === '' || v === 0
+      const reqMissing = REQUIRED_FIELDS.filter((f) => isEmpty(parsed[f]))
+      const optMissing = OPTIONAL_FIELDS.filter((f) => isEmpty(parsed[f]))
+
       setResortData(parsed)
       setResortDataError('')
+      setMissingRequired(reqMissing)
+      setMissingOptional(optMissing)
+
       // Auto-fill resort name for Cover Image tab
       if (parsed.name) setProcessResortName(parsed.name)
-      toast.success(`Parsed: ${parsed.name} (${parsed.country})`)
+
+      if (reqMissing.length > 0) {
+        toast.error(`Missing ${reqMissing.length} required field(s) — DB insert will fail`)
+      } else if (optMissing.length > 0) {
+        toast.warning(`Parsed OK — ${optMissing.length} optional field(s) are empty`)
+      } else {
+        toast.success(`All fields filled: ${parsed.name} (${parsed.country})`)
+      }
     } catch {
       setResortDataError('Invalid JSON — check syntax and try again')
       setResortData(null)
+      setMissingRequired([])
+      setMissingOptional([])
     }
   }, [createResortJson])
 
@@ -1001,22 +1038,63 @@ Notes from submitter: ${selected.notes ?? 'None'}`
                   )}
 
                   {resortData && (
-                    <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-3 space-y-2">
-                      <div className="flex items-center gap-2 text-sm font-medium text-green-400">
-                        <CheckCircle2 className="w-4 h-4" />
-                        Parsed: {resortData.name as string} ({resortData.country as string})
+                    <div className={`rounded-lg p-3 space-y-2 border ${
+                      missingRequired.length > 0
+                        ? 'bg-red-500/10 border-red-500/20'
+                        : missingOptional.length > 0
+                          ? 'bg-yellow-500/10 border-yellow-500/20'
+                          : 'bg-green-500/10 border-green-500/20'
+                    }`}>
+                      <div className={`flex items-center gap-2 text-sm font-medium ${
+                        missingRequired.length > 0
+                          ? 'text-red-400'
+                          : missingOptional.length > 0
+                            ? 'text-yellow-400'
+                            : 'text-green-400'
+                      }`}>
+                        {missingRequired.length > 0 ? (
+                          <AlertCircle className="w-4 h-4" />
+                        ) : missingOptional.length > 0 ? (
+                          <AlertCircle className="w-4 h-4" />
+                        ) : (
+                          <CheckCircle2 className="w-4 h-4" />
+                        )}
+                        {missingRequired.length > 0
+                          ? `${missingRequired.length} required field(s) missing — cannot create`
+                          : missingOptional.length > 0
+                            ? `Parsed: ${resortData.name as string} — ${missingOptional.length} field(s) empty`
+                            : `All fields filled: ${resortData.name as string} (${resortData.country as string})`
+                        }
                       </div>
+
                       <div className="grid grid-cols-3 gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                        <span>Region: {(resortData.region as string) || '—'}</span>
-                        <span>Runs: {resortData.runs != null ? String(resortData.runs) : '—'}</span>
-                        <span>Lifts: {resortData.lifts != null ? String(resortData.lifts) : '—'}</span>
-                        <span>Vertical: {resortData.vertical_m != null ? `${resortData.vertical_m}m` : '—'}</span>
-                        <span>Pass: {(resortData.pass_affiliation as string) || '—'}</span>
-                        <span>Budget: {(resortData.budget_tier as string) || '—'}</span>
-                        <span>Night skiing: {resortData.has_night_skiing ? 'Yes' : 'No'}</span>
-                        <span>Lat: {resortData.lat != null ? String(resortData.lat) : '—'}</span>
-                        <span>Lng: {resortData.lng != null ? String(resortData.lng) : '—'}</span>
+                        <span>Region: {(resortData.region as string) || <span className="text-yellow-400">null</span>}</span>
+                        <span>Runs: {resortData.runs != null ? String(resortData.runs) : <span className="text-yellow-400">null</span>}</span>
+                        <span>Lifts: {resortData.lifts != null ? String(resortData.lifts) : <span className="text-yellow-400">null</span>}</span>
+                        <span>Vertical: {resortData.vertical_m != null ? `${resortData.vertical_m}m` : <span className="text-yellow-400">null</span>}</span>
+                        <span>Pass: {(resortData.pass_affiliation as string) || <span className="text-yellow-400">null</span>}</span>
+                        <span>Budget: {(resortData.budget_tier as string) || <span className="text-yellow-400">null</span>}</span>
+                        <span>Night skiing: {resortData.has_night_skiing != null ? (resortData.has_night_skiing ? 'Yes' : 'No') : <span className="text-yellow-400">null</span>}</span>
+                        <span>Lat: {resortData.lat != null ? String(resortData.lat) : <span className="text-red-400">null</span>}</span>
+                        <span>Lng: {resortData.lng != null ? String(resortData.lng) : <span className="text-red-400">null</span>}</span>
                       </div>
+
+                      {/* Missing required fields — red */}
+                      {missingRequired.length > 0 && (
+                        <div className="text-xs">
+                          <span className="text-red-400 font-medium">Required: </span>
+                          <span className="text-red-400">{missingRequired.join(', ')}</span>
+                        </div>
+                      )}
+
+                      {/* Missing optional fields — yellow */}
+                      {missingOptional.length > 0 && (
+                        <div className="text-xs">
+                          <span className="text-yellow-400 font-medium">Empty: </span>
+                          <span className="text-muted-foreground">{missingOptional.join(', ')}</span>
+                        </div>
+                      )}
+
                       {!!resortData.cover_image_url && (
                         <p className="text-xs text-muted-foreground">
                           Cover URL in JSON: <span className="font-mono">{String(resortData.cover_image_url).slice(0, 60)}...</span>
