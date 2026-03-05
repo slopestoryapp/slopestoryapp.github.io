@@ -16,6 +16,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import {
   Check,
+  CheckCircle2,
   X,
   Copy,
   Loader2,
@@ -25,6 +26,8 @@ import {
   Users,
   Link2,
   Mountain,
+  AlertCircle,
+  SkipForward,
 } from 'lucide-react'
 
 // ---------------------------------------------------------------------------
@@ -149,14 +152,22 @@ export function SubmissionsPage() {
   const [resortSearching, setResortSearching] = useState(false)
   const [selectedResortId, setSelectedResortId] = useState<string | null>(null)
 
-  // Process image form (existing workflow)
+  // Process image form
   const [processImageUrl, setProcessImageUrl] = useState('')
   const [processResortName, setProcessResortName] = useState('')
   const [processLoading, setProcessLoading] = useState(false)
+  const [processedCoverUrl, setProcessedCoverUrl] = useState('')
 
-  // Create resort (existing workflow)
+  // Resort Data (step 3: paste Claude's JSON)
   const [createResortJson, setCreateResortJson] = useState('')
+  const [resortData, setResortData] = useState<Record<string, unknown> | null>(null)
+  const [resortDataError, setResortDataError] = useState('')
+
+  // Create resort (step 5)
   const [createLoading, setCreateLoading] = useState(false)
+
+  // Placeholders (fetched once for auto-assignment)
+  const [placeholderUrls, setPlaceholderUrls] = useState<string[]>([])
 
   // ---------------------------------------------------------------------------
   // Data loading
@@ -197,6 +208,13 @@ export function SubmissionsPage() {
     loadSubmissions()
   }, [loadSubmissions])
 
+  // Fetch available placeholder URLs once on mount (for auto-assignment)
+  useEffect(() => {
+    callEdgeFunction('admin-bulk-import-resorts', { action: 'list_placeholders' })
+      .then((res) => setPlaceholderUrls(res.urls ?? []))
+      .catch(() => {}) // best-effort
+  }, [])
+
   const handleRefresh = useCallback(() => {
     setRefreshing(true)
     loadSubmissions()
@@ -229,6 +247,11 @@ export function SubmissionsPage() {
       setSelectedResortId(null)
       setResortSearchQuery('')
       setResortSearchResults([])
+      // Reset workflow state for new submission
+      setProcessedCoverUrl('')
+      setCreateResortJson('')
+      setResortData(null)
+      setResortDataError('')
       loadDetail(sub)
     },
     [loadDetail],
@@ -385,6 +408,30 @@ Notes from submitter: ${selected.notes ?? 'None'}`
     toast.success('Research prompt copied to clipboard')
   }, [generateResearchPrompt])
 
+  const handleParseResortData = useCallback(() => {
+    if (!createResortJson.trim()) {
+      setResortDataError('Paste Claude\'s JSON output first')
+      setResortData(null)
+      return
+    }
+    try {
+      const parsed = JSON.parse(createResortJson)
+      if (!parsed.name || !parsed.country) {
+        setResortDataError('JSON must include at least "name" and "country"')
+        setResortData(null)
+        return
+      }
+      setResortData(parsed)
+      setResortDataError('')
+      // Auto-fill resort name for Cover Image tab
+      if (parsed.name) setProcessResortName(parsed.name)
+      toast.success(`Parsed: ${parsed.name} (${parsed.country})`)
+    } catch {
+      setResortDataError('Invalid JSON — check syntax and try again')
+      setResortData(null)
+    }
+  }, [createResortJson])
+
   const handleProcessImage = useCallback(async () => {
     if (!selected) return
     setProcessLoading(true)
@@ -418,7 +465,13 @@ Notes from submitter: ${selected.notes ?? 'None'}`
         throw new Error(text || 'Failed to process image')
       }
 
-      toast.success('Image processed successfully')
+      const result = await response.json()
+      if (result.url) {
+        setProcessedCoverUrl(result.url)
+        toast.success(`Cover image processed: ${result.fileName}`)
+      } else {
+        toast.success('Image processed successfully')
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to process image')
     } finally {
@@ -427,17 +480,32 @@ Notes from submitter: ${selected.notes ?? 'None'}`
   }, [selected, processImageUrl, processResortName])
 
   const handleCreateResort = useCallback(async () => {
-    if (!createResortJson.trim()) {
-      toast.error('Please paste the JSON data')
+    if (!resortData) {
+      toast.error('Go to Resort Data tab first and parse Claude\'s JSON')
       return
     }
 
     setCreateLoading(true)
     try {
-      const parsedData = JSON.parse(createResortJson)
+      // Build final data: parsed resort data + cover image resolution
+      const finalData = { ...resortData }
+
+      // Remove fields that don't belong in the resorts table
+      delete finalData.verification_notes
+      delete finalData.status
+
+      // Resolve cover_image_url: processed image > placeholder > leave as-is
+      if (!finalData.cover_image_url) {
+        if (processedCoverUrl) {
+          finalData.cover_image_url = processedCoverUrl
+        } else if (placeholderUrls.length > 0) {
+          finalData.cover_image_url = placeholderUrls[Math.floor(Math.random() * placeholderUrls.length)]
+        }
+      }
+
       const { data: insertedResort, error } = await supabase
         .from('resorts')
-        .insert(parsedData)
+        .insert(finalData)
         .select('id')
         .single()
 
@@ -449,10 +517,14 @@ Notes from submitter: ${selected.notes ?? 'None'}`
       await log({
         action: 'create_resort',
         entity_type: 'resort',
-        details: { resort_name: parsedData.name, source: 'submission' },
+        details: {
+          resort_name: finalData.name,
+          source: 'submission',
+          cover_source: processedCoverUrl ? 'processed' : finalData.cover_image_url ? 'placeholder' : 'none',
+        },
       })
 
-      toast.success(`Resort "${parsedData.name}" created successfully`)
+      toast.success(`Resort "${finalData.name}" created successfully`)
 
       // Auto-approve the submission linked to the new resort
       if (selected && insertedResort?.id) {
@@ -471,12 +543,14 @@ Notes from submitter: ${selected.notes ?? 'None'}`
       }
 
       setCreateResortJson('')
+      setResortData(null)
+      setProcessedCoverUrl('')
     } catch {
-      toast.error('Invalid JSON — please check and try again')
+      toast.error('Failed to create resort')
     } finally {
       setCreateLoading(false)
     }
-  }, [createResortJson, selected, log, loadSubmissions])
+  }, [resortData, processedCoverUrl, placeholderUrls, selected, log, loadSubmissions])
 
   // ---------------------------------------------------------------------------
   // Render helpers
@@ -842,17 +916,19 @@ Notes from submitter: ${selected.notes ?? 'None'}`
           </div>
         </div>
 
-        {/* Bottom: Processing Section (existing workflow) */}
+        {/* Bottom: Processing Section — linear workflow tabs */}
         {selected && selected.status === 'pending' && (
           <div className="bg-card border border-border rounded-xl p-4">
             <Tabs defaultValue="workflow">
               <TabsList>
-                <TabsTrigger value="workflow">Workflow</TabsTrigger>
-                <TabsTrigger value="research">Research Prompt</TabsTrigger>
-                <TabsTrigger value="image">Process Image</TabsTrigger>
-                <TabsTrigger value="create">Create Resort</TabsTrigger>
+                <TabsTrigger value="workflow">1. Workflow</TabsTrigger>
+                <TabsTrigger value="research">2. Research</TabsTrigger>
+                <TabsTrigger value="data">3. Resort Data</TabsTrigger>
+                <TabsTrigger value="cover">4. Cover Image</TabsTrigger>
+                <TabsTrigger value="create">5. Create Resort</TabsTrigger>
               </TabsList>
 
+              {/* ── Tab 1: Workflow ── */}
               <TabsContent value="workflow" className="mt-4">
                 <div className="space-y-3 text-sm">
                   <h3 className="font-semibold">Submission Review Workflow</h3>
@@ -861,17 +937,25 @@ Notes from submitter: ${selected.notes ?? 'None'}`
                       <strong className="text-foreground">Check matches:</strong> Review the potential resort matches above. If a match exists, select it and click Approve.
                     </li>
                     <li>
-                      <strong className="text-foreground">New resort?</strong> Copy the Research Prompt, paste into Claude to get resort data.
+                      <strong className="text-foreground">Research:</strong> Copy the prompt, paste into Claude to get resort data as JSON.
                     </li>
-                    <li>If the resort has a photo, use Process Image to generate a cover image.</li>
-                    <li>Paste Claude's JSON into Create Resort. The submission auto-approves and cascades to duplicates.</li>
                     <li>
-                      <strong className="text-foreground">Invalid?</strong> Reject (removes submission and visits; user must start again; notified to contact support).
+                      <strong className="text-foreground">Resort Data:</strong> Paste Claude's JSON output and validate it.
+                    </li>
+                    <li>
+                      <strong className="text-foreground">Cover Image:</strong> If you have a photo URL, process it into a cover image. Otherwise skip — a placeholder will be auto-assigned.
+                    </li>
+                    <li>
+                      <strong className="text-foreground">Create Resort:</strong> Review the final data and click Create. The submission auto-approves and cascades to duplicates.
+                    </li>
+                    <li>
+                      <strong className="text-foreground">Invalid?</strong> Reject (removes submission and visits; user notified to contact support).
                     </li>
                   </ol>
                 </div>
               </TabsContent>
 
+              {/* ── Tab 2: Research ── */}
               <TabsContent value="research" className="mt-4">
                 <div className="space-y-3">
                   <div className="bg-muted/50 rounded-lg p-4 text-sm font-mono whitespace-pre-wrap max-h-[300px] overflow-auto">
@@ -884,18 +968,81 @@ Notes from submitter: ${selected.notes ?? 'None'}`
                 </div>
               </TabsContent>
 
-              <TabsContent value="image" className="mt-4">
-                <div className="space-y-3 max-w-md">
+              {/* ── Tab 3: Resort Data ── */}
+              <TabsContent value="data" className="mt-4">
+                <div className="space-y-3">
                   <div>
-                    <Label>Submission ID</Label>
-                    <Input value={selected.id} readOnly className="mt-1 font-mono text-xs" />
+                    <Label>Paste Claude's JSON Output</Label>
+                    <textarea
+                      value={createResortJson}
+                      onChange={(e) => {
+                        setCreateResortJson(e.target.value)
+                        // Clear previous parse when editing
+                        if (resortData) {
+                          setResortData(null)
+                          setResortDataError('')
+                        }
+                      }}
+                      placeholder='{"name": "Resort Name", "country": "...", ...}'
+                      className="mt-1 flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring min-h-[200px] font-mono"
+                    />
                   </div>
+
+                  <Button onClick={handleParseResortData} variant="outline" size="sm" disabled={!createResortJson.trim()}>
+                    <Check className="w-4 h-4 mr-1" />
+                    Parse & Validate
+                  </Button>
+
+                  {resortDataError && (
+                    <div className="flex items-start gap-2 text-sm text-red-400 bg-red-500/10 rounded-lg p-3">
+                      <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                      {resortDataError}
+                    </div>
+                  )}
+
+                  {resortData && (
+                    <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-3 space-y-2">
+                      <div className="flex items-center gap-2 text-sm font-medium text-green-400">
+                        <CheckCircle2 className="w-4 h-4" />
+                        Parsed: {resortData.name as string} ({resortData.country as string})
+                      </div>
+                      <div className="grid grid-cols-3 gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                        <span>Region: {(resortData.region as string) || '—'}</span>
+                        <span>Runs: {resortData.runs != null ? String(resortData.runs) : '—'}</span>
+                        <span>Lifts: {resortData.lifts != null ? String(resortData.lifts) : '—'}</span>
+                        <span>Vertical: {resortData.vertical_m != null ? `${resortData.vertical_m}m` : '—'}</span>
+                        <span>Pass: {(resortData.pass_affiliation as string) || '—'}</span>
+                        <span>Budget: {(resortData.budget_tier as string) || '—'}</span>
+                        <span>Night skiing: {resortData.has_night_skiing ? 'Yes' : 'No'}</span>
+                        <span>Lat: {resortData.lat != null ? String(resortData.lat) : '—'}</span>
+                        <span>Lng: {resortData.lng != null ? String(resortData.lng) : '—'}</span>
+                      </div>
+                      {!!resortData.cover_image_url && (
+                        <p className="text-xs text-muted-foreground">
+                          Cover URL in JSON: <span className="font-mono">{String(resortData.cover_image_url).slice(0, 60)}...</span>
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </TabsContent>
+
+              {/* ── Tab 4: Cover Image ── */}
+              <TabsContent value="cover" className="mt-4">
+                <div className="space-y-4 max-w-md">
+                  {!resortData && (
+                    <div className="flex items-start gap-2 text-sm text-yellow-400 bg-yellow-500/10 rounded-lg p-3">
+                      <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                      Parse Resort Data first (tab 3) — the resort name will auto-fill here.
+                    </div>
+                  )}
+
                   <div>
                     <Label>Photo URL</Label>
                     <Input
                       value={processImageUrl}
                       onChange={(e) => setProcessImageUrl(e.target.value)}
-                      placeholder="Photo URL"
+                      placeholder="Paste a photo URL to process into a cover image"
                       className="mt-1"
                     />
                   </div>
@@ -904,43 +1051,124 @@ Notes from submitter: ${selected.notes ?? 'None'}`
                     <Input
                       value={processResortName}
                       onChange={(e) => setProcessResortName(e.target.value)}
-                      placeholder="Resort name"
+                      placeholder="Resort name (auto-filled from Resort Data)"
                       className="mt-1"
+                      readOnly={!!resortData?.name}
                     />
-                  </div>
-                  <Button onClick={handleProcessImage} disabled={processLoading}>
-                    {processLoading ? (
-                      <Loader2 className="w-4 h-4 mr-1 animate-spin" />
-                    ) : (
-                      <ImageIcon className="w-4 h-4 mr-1" />
+                    {!!resortData?.name && (
+                      <p className="text-xs text-muted-foreground mt-1">Auto-filled from Resort Data</p>
                     )}
-                    Process Image
-                  </Button>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <Button onClick={handleProcessImage} disabled={processLoading || !processImageUrl.trim()}>
+                      {processLoading ? (
+                        <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                      ) : (
+                        <ImageIcon className="w-4 h-4 mr-1" />
+                      )}
+                      Process Image
+                    </Button>
+                  </div>
+
+                  {/* Status: processed image */}
+                  {processedCoverUrl && (
+                    <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-3">
+                      <div className="flex items-center gap-2 text-sm font-medium text-green-400">
+                        <CheckCircle2 className="w-4 h-4" />
+                        Cover image processed
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1 font-mono break-all">
+                        {processedCoverUrl}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        This will be applied automatically when you Create Resort.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Status: no image — placeholder info */}
+                  {!processedCoverUrl && !String(resortData?.cover_image_url ?? '') && (
+                    <div className="bg-muted/50 rounded-lg p-3 text-sm text-muted-foreground">
+                      <div className="flex items-center gap-2">
+                        <SkipForward className="w-4 h-4" />
+                        <span className="font-medium">No cover image?</span>
+                      </div>
+                      <p className="mt-1">
+                        {placeholderUrls.length > 0
+                          ? `A random placeholder will be auto-assigned from ${placeholderUrls.length} available placeholders.`
+                          : 'No placeholders available. The resort will be created without a cover image.'
+                        }
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Status: JSON already has a cover URL */}
+                  {!processedCoverUrl && !!resortData?.cover_image_url && (
+                    <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3">
+                      <div className="flex items-center gap-2 text-sm font-medium text-blue-400">
+                        <CheckCircle2 className="w-4 h-4" />
+                        Cover URL from Resort Data
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1 font-mono break-all">
+                        {String(resortData.cover_image_url)}
+                      </p>
+                    </div>
+                  )}
                 </div>
               </TabsContent>
 
+              {/* ── Tab 5: Create Resort ── */}
               <TabsContent value="create" className="mt-4">
-                <div className="space-y-3">
-                  <div>
-                    <Label>Paste Claude's JSON Output</Label>
-                    <textarea
-                      value={createResortJson}
-                      onChange={(e) => setCreateResortJson(e.target.value)}
-                      placeholder='{"name": "Resort Name", "country": "...", ...}'
-                      className="mt-1 flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring min-h-[200px] font-mono"
-                    />
-                  </div>
-                  <Button
-                    onClick={handleCreateResort}
-                    disabled={createLoading || !createResortJson.trim()}
-                  >
-                    {createLoading ? (
-                      <Loader2 className="w-4 h-4 mr-1 animate-spin" />
-                    ) : (
-                      <Plus className="w-4 h-4 mr-1" />
-                    )}
-                    Create Resort & Auto-Approve
-                  </Button>
+                <div className="space-y-4">
+                  {!resortData ? (
+                    <div className="flex items-start gap-2 text-sm text-yellow-400 bg-yellow-500/10 rounded-lg p-3">
+                      <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                      Parse Resort Data first (tab 3) before creating.
+                    </div>
+                  ) : (
+                    <>
+                      {/* Summary card */}
+                      <div className="bg-muted/50 rounded-lg p-4 space-y-2">
+                        <h4 className="text-sm font-semibold">
+                          {resortData.name as string} — {resortData.country as string}
+                        </h4>
+                        <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-xs text-muted-foreground">
+                          <span>Region: {(resortData.region as string) || '—'}</span>
+                          <span>Website: {(resortData.website as string) || '—'}</span>
+                          <span>Runs: {resortData.runs != null ? String(resortData.runs) : '—'}</span>
+                          <span>Lifts: {resortData.lifts != null ? String(resortData.lifts) : '—'}</span>
+                          <span>Vertical: {resortData.vertical_m != null ? `${resortData.vertical_m}m` : '—'}</span>
+                          <span>Budget: {(resortData.budget_tier as string) || '—'}</span>
+                        </div>
+                        <div className="text-xs mt-2 pt-2 border-t border-border">
+                          <span className="text-muted-foreground">Cover image: </span>
+                          {processedCoverUrl ? (
+                            <span className="text-green-400">Processed image</span>
+                          ) : resortData.cover_image_url ? (
+                            <span className="text-blue-400">From JSON data</span>
+                          ) : placeholderUrls.length > 0 ? (
+                            <span className="text-yellow-400">Placeholder (auto-assigned)</span>
+                          ) : (
+                            <span className="text-red-400">None</span>
+                          )}
+                        </div>
+                      </div>
+
+                      <Button
+                        onClick={handleCreateResort}
+                        disabled={createLoading}
+                        className="w-full"
+                      >
+                        {createLoading ? (
+                          <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                        ) : (
+                          <Plus className="w-4 h-4 mr-1" />
+                        )}
+                        Create Resort & Auto-Approve
+                      </Button>
+                    </>
+                  )}
                 </div>
               </TabsContent>
             </Tabs>
