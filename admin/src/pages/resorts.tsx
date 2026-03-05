@@ -12,7 +12,6 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   Dialog,
   DialogContent,
@@ -55,6 +54,26 @@ interface Resort {
   has_night_skiing: boolean | null
   instagram_handle: string | null
   description: string | null
+  budget_tier: string | null
+  verification_notes: string | null
+  created_at: string | null
+  updated_at: string | null
+}
+
+// The 21 data fields we track for completeness (excludes id, cover_image_url, verified, created_at, updated_at, verification_notes)
+const DATA_FIELDS: (keyof Resort)[] = [
+  'name', 'country', 'country_code', 'region', 'lat', 'lng',
+  'website', 'vertical_m', 'runs', 'lifts', 'annual_snowfall_cm',
+  'beginner_pct', 'intermediate_pct', 'advanced_pct',
+  'season_open', 'season_close', 'has_night_skiing',
+  'pass_affiliation', 'instagram_handle', 'budget_tier', 'description',
+]
+
+function countFilledFields(resort: Resort): number {
+  return DATA_FIELDS.filter((f) => {
+    const v = resort[f]
+    return v !== null && v !== undefined && v !== ''
+  }).length
 }
 
 const columns: ColumnDef<Resort, unknown>[] = [
@@ -100,6 +119,25 @@ const columns: ColumnDef<Resort, unknown>[] = [
     cell: ({ row }) => {
       const val = row.getValue('vertical_m') as number | null
       return val ? `${val}m` : '-'
+    },
+  },
+  {
+    id: 'data',
+    header: 'Data',
+    cell: ({ row }) => {
+      const filled = countFilledFields(row.original)
+      const total = DATA_FIELDS.length
+      const color =
+        filled >= 18
+          ? 'text-green-400'
+          : filled >= 12
+            ? 'text-yellow-400'
+            : 'text-red-400'
+      return (
+        <span className={`font-mono text-xs ${color}`}>
+          {filled}/{total}
+        </span>
+      )
     },
   },
 ]
@@ -251,6 +289,8 @@ export function ResortsPage() {
 
     const {
       id: _id,
+      created_at: _ca,
+      updated_at: _ua,
       ...payload
     } = editForm as Resort
 
@@ -470,7 +510,7 @@ export function ResortsPage() {
             </DialogDescription>
           </DialogHeader>
 
-          <ScrollArea className="flex-1 pr-4">
+          <div className="flex-1 min-h-0 overflow-y-auto pr-4">
             <div className="grid grid-cols-2 gap-4 py-4">
               {/* Text fields */}
               {([
@@ -607,6 +647,26 @@ export function ResortsPage() {
                 </Select>
               </div>
 
+              {/* Budget Tier */}
+              <div>
+                <Label className="text-xs">Budget Tier</Label>
+                <Select
+                  value={editForm.budget_tier ?? 'null'}
+                  onValueChange={(v) => updateField('budget_tier', v === 'null' ? null : v)}
+                >
+                  <SelectTrigger className="mt-1">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="null">Unknown</SelectItem>
+                    <SelectItem value="budget">Budget</SelectItem>
+                    <SelectItem value="mid">Mid</SelectItem>
+                    <SelectItem value="premium">Premium</SelectItem>
+                    <SelectItem value="luxury">Luxury</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
               {/* Description */}
               <div className="col-span-2">
                 <Label className="text-xs">Description</Label>
@@ -618,8 +678,39 @@ export function ResortsPage() {
                   className="mt-1 flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring min-h-[80px]"
                 />
               </div>
+
+              {/* Verification Notes */}
+              <div className="col-span-2">
+                <Label className="text-xs">Verification Notes</Label>
+                <textarea
+                  value={(editForm.verification_notes as string) ?? ''}
+                  onChange={(e) =>
+                    updateField('verification_notes', e.target.value || null)
+                  }
+                  className="mt-1 flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring min-h-[60px]"
+                  placeholder="Internal notes about data verification..."
+                />
+              </div>
+
+              {/* Read-only metadata */}
+              {editResort?.created_at && (
+                <div>
+                  <Label className="text-xs text-muted-foreground">Created</Label>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {new Date(editResort.created_at).toLocaleDateString()}
+                  </p>
+                </div>
+              )}
+              {editResort?.updated_at && (
+                <div>
+                  <Label className="text-xs text-muted-foreground">Updated</Label>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {new Date(editResort.updated_at).toLocaleDateString()}
+                  </p>
+                </div>
+              )}
             </div>
-          </ScrollArea>
+          </div>
 
           <DialogFooter className="flex justify-between sm:justify-between">
             <Button
@@ -662,7 +753,7 @@ export function ResortsPage() {
             </DialogDescription>
           </DialogHeader>
 
-          <ScrollArea className="flex-1 pr-4">
+          <div className="flex-1 min-h-0 overflow-y-auto pr-4">
             <div className="grid grid-cols-2 gap-4 py-4">
               {/* Text fields */}
               {([
@@ -804,6 +895,26 @@ export function ResortsPage() {
                 </Select>
               </div>
 
+              {/* Budget Tier */}
+              <div>
+                <Label className="text-xs">Budget Tier</Label>
+                <Select
+                  value={addForm.budget_tier ?? 'null'}
+                  onValueChange={(v) => updateAddField('budget_tier', v === 'null' ? null : v)}
+                >
+                  <SelectTrigger className="mt-1">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="null">Unknown</SelectItem>
+                    <SelectItem value="budget">Budget</SelectItem>
+                    <SelectItem value="mid">Mid</SelectItem>
+                    <SelectItem value="premium">Premium</SelectItem>
+                    <SelectItem value="luxury">Luxury</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
               {/* Description */}
               <div className="col-span-2">
                 <Label className="text-xs">Description</Label>
@@ -815,8 +926,21 @@ export function ResortsPage() {
                   className="mt-1 flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring min-h-[80px]"
                 />
               </div>
+
+              {/* Verification Notes */}
+              <div className="col-span-2">
+                <Label className="text-xs">Verification Notes</Label>
+                <textarea
+                  value={(addForm.verification_notes as string) ?? ''}
+                  onChange={(e) =>
+                    updateAddField('verification_notes', e.target.value || null)
+                  }
+                  className="mt-1 flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring min-h-[60px]"
+                  placeholder="Internal notes about data verification..."
+                />
+              </div>
             </div>
-          </ScrollArea>
+          </div>
 
           <DialogFooter>
             <Button onClick={handleAdd} disabled={adding || !addForm.name || !addForm.country}>
