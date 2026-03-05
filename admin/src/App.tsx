@@ -93,7 +93,7 @@ export default function App() {
 
   const renderPage = () => {
     switch (currentPage) {
-      case 'overview': return <OverviewPage />
+      case 'overview': return <OverviewPage onNavigate={handleNavigate} />
       case 'submissions': return <SubmissionsPage />
       case 'feature-photos': return <FeaturePhotosPage />
       case 'resorts': return <ResortsPage />
@@ -109,7 +109,7 @@ export default function App() {
       case 'analytics': return <AnalyticsPage />
       case 'activity': return <ActivityPage />
       case 'system': return <SystemPage />
-      default: return <OverviewPage />
+      default: return <OverviewPage onNavigate={handleNavigate} />
     }
   }
 
