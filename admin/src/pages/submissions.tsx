@@ -320,6 +320,32 @@ export function SubmissionsPage() {
     if (!selected) return ''
     return `Research the ski resort "${selected.resort_name}" in ${selected.country}${selected.region ? `, ${selected.region}` : ''}.
 
+## Sources to check (in order of reliability)
+1. **Official resort website** — most authoritative for lifts, runs, vertical, season dates
+2. **Wikipedia** — good for coordinates, region, general facts
+3. **skiresort.info** — comprehensive stats, but "runs" may actually be slope_km
+4. **OnTheSnow** — backup source for stats
+5. **Google Maps** — for exact base area coordinates
+
+## CRITICAL checks
+- **runs ≠ slope_km**: "runs" must be the actual number of distinct ski trails, NOT total slope kilometers. This is the #1 data quality issue. If a source gives e.g. "120 runs" and slope km is ~120, the runs value is almost certainly wrong — look up the actual trail count.
+- **has_night_skiing**: Only true if actual night skiing/snowboarding on lit runs exists. Tobogganing, night sledding, and lit walking paths do NOT count.
+- **coordinates**: lat/lng must be the base area / main village, not the summit. 6 decimal places. Cross-check with Google Maps.
+- **beginner_pct + intermediate_pct + advanced_pct** must sum to 100 (or all null if unknown).
+- **Is it real?**: Confirm the resort actually exists and is operational. Flag if fabricated, permanently closed, heli/cat-ski only, indoor, or dry slope.
+
+## pass_affiliation values
+Use the major global pass name if applicable: "Epic Pass", "Ikon Pass", "Mountain Collective", "Indy Pass".
+For regional multi-resort passes (common in Europe), use the pass name as-is, e.g. "Portes du Soleil", "Les 3 Vallées", "Ski amadé", "Magic Pass", "Snow Card Tirol".
+Use "Independent" if the resort is not part of any multi-resort pass. Use null if unknown.
+
+## budget_tier values
+Estimate the typical adult day lift ticket price:
+- "budget" — under $60 USD / day
+- "mid" — $60–120 / day
+- "premium" — $120–200 / day
+- "luxury" — $200+ / day
+
 Provide the following information in JSON format:
 {
   "name": "",
@@ -343,8 +369,12 @@ Provide the following information in JSON format:
   "season_close": "",
   "has_night_skiing": false,
   "instagram_handle": "",
-  "description": ""
+  "budget_tier": "",
+  "description": "",
+  "verification_notes": ""
 }
+
+If you find discrepancies between sources or anything uncertain, document them in verification_notes. Use null for any field you truly cannot determine.
 
 Notes from submitter: ${selected.notes ?? 'None'}`
   }, [selected])
