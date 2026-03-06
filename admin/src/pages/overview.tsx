@@ -444,7 +444,9 @@ export function OverviewPage({
     if (!form.service_supabase) {
       form.service_supabase = {
         plan: 'Free', db_limit_mb: 500, bandwidth_limit_gb: 5,
-        bandwidth_used_gb: null, edge_invocations_limit: 500000, auth_mau_limit: 50000,
+        bandwidth_used_gb: null, cached_egress_limit_gb: 5, cached_egress_used_gb: null,
+        edge_invocations_limit: 500000, auth_mau_limit: 50000,
+        file_storage_limit_gb: 1, file_storage_used_gb: null,
       }
     }
     if (!form.service_cloudflare_r2) {
@@ -764,11 +766,19 @@ export function OverviewPage({
                     auto
                   />
 
-                  {/* Bandwidth — manual */}
+                  {/* Egress — manual */}
                   <UsageBar
-                    label="Bandwidth"
+                    label="Egress"
                     used={(supabaseConfig?.bandwidth_used_gb as number) ?? null}
                     limit={(supabaseConfig?.bandwidth_limit_gb as number) ?? 5}
+                    unit="GB"
+                  />
+
+                  {/* Cached Egress — manual */}
+                  <UsageBar
+                    label="Cached Egress"
+                    used={(supabaseConfig?.cached_egress_used_gb as number) ?? null}
+                    limit={(supabaseConfig?.cached_egress_limit_gb as number) ?? 5}
                     unit="GB"
                   />
 
@@ -784,6 +794,15 @@ export function OverviewPage({
                     note="rate-limited calls only"
                   />
 
+                  {/* File Storage — manual */}
+                  <UsageBar
+                    label="File Storage"
+                    used={(supabaseConfig?.file_storage_used_gb as number) ?? null}
+                    limit={(supabaseConfig?.file_storage_limit_gb as number) ?? 1}
+                    unit="GB"
+                    note="legacy — new uploads use R2"
+                  />
+
                   {/* Auth MAUs — auto */}
                   <UsageBar
                     label="Auth MAUs"
@@ -794,6 +813,10 @@ export function OverviewPage({
                     formatValue={(v) => v.toLocaleString()}
                     formatLimit={(v) => `${(v / 1000).toFixed(0)}K`}
                   />
+
+                  <div className="text-[10px] text-yellow-400/80">
+                    Free project pauses after 1 week of inactivity
+                  </div>
                 </div>
 
                 {/* Cloudflare R2 */}
@@ -1073,7 +1096,7 @@ export function OverviewPage({
                 Supabase
               </h4>
               <p className="text-[10px] text-muted-foreground">
-                DB size and Auth MAUs are auto-calculated. Update bandwidth after checking the Supabase dashboard.
+                DB size and Auth MAUs are auto-calculated. Update egress and file storage after checking the dashboard.
               </p>
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -1102,7 +1125,7 @@ export function OverviewPage({
                   />
                 </div>
                 <div>
-                  <Label className="text-xs">Bandwidth Limit (GB)</Label>
+                  <Label className="text-xs">Egress Limit (GB)</Label>
                   <Input
                     type="number"
                     value={(configForm.service_supabase?.bandwidth_limit_gb as number) ?? 5}
@@ -1117,7 +1140,7 @@ export function OverviewPage({
                   />
                 </div>
                 <div>
-                  <Label className="text-xs">Bandwidth Used (GB)</Label>
+                  <Label className="text-xs">Egress Used (GB)</Label>
                   <Input
                     type="number"
                     step="0.1"
@@ -1127,6 +1150,38 @@ export function OverviewPage({
                       updateConfigField(
                         'service_supabase',
                         'bandwidth_used_gb',
+                        e.target.value ? parseFloat(e.target.value) : null
+                      )
+                    }
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">Cached Egress Limit (GB)</Label>
+                  <Input
+                    type="number"
+                    value={(configForm.service_supabase?.cached_egress_limit_gb as number) ?? 5}
+                    onChange={(e) =>
+                      updateConfigField(
+                        'service_supabase',
+                        'cached_egress_limit_gb',
+                        parseFloat(e.target.value) || 5
+                      )
+                    }
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">Cached Egress Used (GB)</Label>
+                  <Input
+                    type="number"
+                    step="0.1"
+                    placeholder="Check dashboard"
+                    value={(configForm.service_supabase?.cached_egress_used_gb as number) ?? ''}
+                    onChange={(e) =>
+                      updateConfigField(
+                        'service_supabase',
+                        'cached_egress_used_gb',
                         e.target.value ? parseFloat(e.target.value) : null
                       )
                     }
@@ -1158,6 +1213,38 @@ export function OverviewPage({
                         'service_supabase',
                         'auth_mau_limit',
                         parseInt(e.target.value) || 50000
+                      )
+                    }
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">File Storage Limit (GB)</Label>
+                  <Input
+                    type="number"
+                    value={(configForm.service_supabase?.file_storage_limit_gb as number) ?? 1}
+                    onChange={(e) =>
+                      updateConfigField(
+                        'service_supabase',
+                        'file_storage_limit_gb',
+                        parseFloat(e.target.value) || 1
+                      )
+                    }
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">File Storage Used (GB)</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    placeholder="Check dashboard"
+                    value={(configForm.service_supabase?.file_storage_used_gb as number) ?? ''}
+                    onChange={(e) =>
+                      updateConfigField(
+                        'service_supabase',
+                        'file_storage_used_gb',
+                        e.target.value ? parseFloat(e.target.value) : null
                       )
                     }
                     className="mt-1"
