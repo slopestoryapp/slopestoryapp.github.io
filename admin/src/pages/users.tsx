@@ -13,7 +13,6 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import {
   Select,
@@ -49,6 +48,8 @@ interface Profile {
   sport_preference: string | null
   seasons_count: number | null
   onboarding_completed: boolean
+  storage_used_bytes: number | null
+  storage_tier: string | null
   created_at: string
 }
 
@@ -376,12 +377,20 @@ export function UsersPage() {
 
           {/* Right: User Detail Panel */}
           <div className="bg-card border border-border rounded-xl">
-            <div className="p-4 border-b border-border">
+            <div className="p-4 border-b border-border flex items-center justify-between">
               <h2 className="text-sm font-semibold">User Details</h2>
+              {selectedUser && (
+                <button
+                  onClick={() => setSelectedUser(null)}
+                  className="text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
             </div>
 
             {selectedUser ? (
-              <ScrollArea className="max-h-[calc(100vh-280px)]">
+              <div className="max-h-[calc(100vh-280px)] overflow-y-auto">
                 <div className="p-4 space-y-4">
                   {/* Profile Fields */}
                   <div className="space-y-3">
@@ -521,6 +530,42 @@ export function UsersPage() {
                     </Button>
                   </div>
 
+                  {/* Read-only metadata */}
+                  <div className="border-t border-border pt-3 space-y-1.5">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-muted-foreground">Joined</span>
+                      <span>{formatDate(selectedUser.created_at)}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-muted-foreground">Storage Tier</span>
+                      <Badge
+                        variant="secondary"
+                        className={cn(
+                          selectedUser.storage_tier === 'pro' && 'bg-blue-500/20 text-blue-400 border-0',
+                          selectedUser.storage_tier === 'pro_plus' && 'bg-purple-500/20 text-purple-400 border-0',
+                        )}
+                      >
+                        {selectedUser.storage_tier ?? 'free'}
+                      </Badge>
+                    </div>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-muted-foreground">Storage Used</span>
+                      <span>
+                        {selectedUser.storage_used_bytes != null
+                          ? `${(selectedUser.storage_used_bytes / (1024 * 1024)).toFixed(1)} MB`
+                          : '0 MB'}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-muted-foreground">Visits</span>
+                      <span>{visits.length}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-muted-foreground">Photos</span>
+                      <span>{photos.length}{photos.length === 50 ? '+' : ''}</span>
+                    </div>
+                  </div>
+
                   {/* Activity Tabs */}
                   <div className="border-t border-border pt-4">
                     <Tabs defaultValue="visits">
@@ -630,7 +675,7 @@ export function UsersPage() {
                     </Tabs>
                   </div>
                 </div>
-              </ScrollArea>
+              </div>
             ) : (
               <div className="p-8 text-center text-sm text-muted-foreground">
                 Select a user to view details
