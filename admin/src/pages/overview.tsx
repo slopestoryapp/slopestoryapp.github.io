@@ -86,6 +86,8 @@ interface SystemMetrics {
   db_size_mb: number
   total_storage_bytes: number
   total_photos: number
+  total_users: number
+  edge_fn_calls_month: number
 }
 
 // ---------------------------------------------------------------------------
@@ -207,6 +209,64 @@ function ChartTooltip({
           {p.dataKey === 'thisWeek' ? 'This week' : 'Last week'}: {p.value}
         </p>
       ))}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// UsageBar — reusable progress bar for service metrics
+// ---------------------------------------------------------------------------
+
+function UsageBar({
+  label,
+  used,
+  limit,
+  unit,
+  auto,
+  formatValue,
+  formatLimit,
+  note,
+}: {
+  label: string
+  used: number | null
+  limit: number
+  unit: string
+  auto?: boolean
+  formatValue?: (v: number) => string
+  formatLimit?: (v: number) => string
+  note?: string
+}) {
+  const isNull = used === null || used === undefined
+  const ratio = isNull ? 0 : limit > 0 ? used / limit : 0
+  const fmtUsed = isNull ? '—' : formatValue ? formatValue(used) : `${used}`
+  const fmtLimit = formatLimit ? formatLimit(limit) : `${limit}`
+
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center justify-between text-[11px]">
+        <span className="text-muted-foreground flex items-center gap-1">
+          {label}
+          {auto && (
+            <span className="text-[9px] text-green-400 font-medium uppercase">auto</span>
+          )}
+        </span>
+        <span className={isNull ? 'text-muted-foreground/50' : getHealthColor(ratio)}>
+          {isNull ? 'Not checked' : `${fmtUsed} / ${fmtLimit}${unit ? ` ${unit}` : ''}`}
+        </span>
+      </div>
+      <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+        {isNull ? (
+          <div className="h-full w-full bg-muted-foreground/10" />
+        ) : (
+          <div
+            className={`h-full rounded-full transition-all ${getBarColor(ratio)}`}
+            style={{ width: `${Math.min(ratio * 100, 100)}%` }}
+          />
+        )}
+      </div>
+      {note && (
+        <div className="text-[10px] text-muted-foreground/60">{note}</div>
+      )}
     </div>
   )
 }
@@ -382,16 +442,26 @@ export function OverviewPage({
       form.service_apple_key = { expires_at: '', rotation_months: 6, notes: '' }
     }
     if (!form.service_supabase) {
-      form.service_supabase = { plan: 'Free', db_limit_mb: 500 }
+      form.service_supabase = {
+        plan: 'Free', db_limit_mb: 500, bandwidth_limit_gb: 5,
+        bandwidth_used_gb: null, edge_invocations_limit: 500000, auth_mau_limit: 50000,
+      }
     }
     if (!form.service_cloudflare_r2) {
-      form.service_cloudflare_r2 = { plan: 'Free', storage_limit_gb: 10 }
+      form.service_cloudflare_r2 = {
+        plan: 'Free', storage_limit_gb: 10,
+        class_a_ops_limit: 1000000, class_a_ops_used: null,
+        class_b_ops_limit: 10000000, class_b_ops_used: null,
+      }
     }
     if (!form.service_sentry) {
-      form.service_sentry = { plan: 'Developer', events_limit_monthly: 5000 }
+      form.service_sentry = { plan: 'Developer', events_limit_monthly: 5000, events_used: null }
     }
     if (!form.service_posthog) {
-      form.service_posthog = { plan: 'Free', events_limit_monthly: 1000000 }
+      form.service_posthog = {
+        plan: 'Free', events_limit_monthly: 1000000, events_used: null,
+        sessions_limit_monthly: 5000, sessions_used: null,
+      }
     }
     setConfigForm(form)
     setConfigOpen(true)
@@ -642,7 +712,7 @@ export function OverviewPage({
             <div>
               <h2 className="text-sm font-semibold">System Health</h2>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Service limits and key dates
+                All service limits — auto-calculated where possible, manual for external APIs
               </p>
             </div>
             <Button variant="outline" size="sm" onClick={openConfigDialog}>
@@ -652,9 +722,9 @@ export function OverviewPage({
           </div>
 
           {loading ? (
-            <div className="p-5 grid grid-cols-2 md:grid-cols-5 gap-4">
+            <div className="p-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {Array.from({ length: 5 }).map((_, i) => (
-                <Skeleton key={i} className="h-28 rounded-lg" />
+                <Skeleton key={i} className="h-40 rounded-lg" />
               ))}
             </div>
           ) : systemConfigs.length === 0 ? (
@@ -662,139 +732,223 @@ export function OverviewPage({
               No system health configs found. Click Configure to set up service tracking.
             </div>
           ) : (
-            <div className="p-5 grid grid-cols-2 md:grid-cols-5 gap-4">
-              {/* Apple Key */}
-              <div
-                className={`rounded-lg border p-4 space-y-2 ${
-                  appleKeyDays !== null
-                    ? getKeyBgColor(appleKeyDays)
-                    : 'bg-muted/30 border-border'
-                }`}
-              >
-                <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-                  <Key className="w-3.5 h-3.5" />
-                  Apple Cert
-                </div>
-                {appleConfig?.expires_at ? (
-                  <>
-                    <div
-                      className={`text-lg font-bold ${
-                        appleKeyDays !== null
-                          ? getKeyStatusColor(appleKeyDays)
-                          : ''
-                      }`}
+            <div className="p-5 space-y-4">
+              {/* Row 1: Supabase + R2 (multi-metric) */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Supabase */}
+                <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                      <Database className="w-3.5 h-3.5" />
+                      Supabase
+                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                        {supabaseConfig?.plan as string ?? 'Free'}
+                      </Badge>
+                    </div>
+                    <a
+                      href={SERVICE_LINKS.service_supabase}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-muted-foreground hover:text-foreground"
                     >
-                      {appleKeyDays !== null && appleKeyDays > 0
-                        ? `${appleKeyDays}d`
-                        : appleKeyDays === 0
-                          ? 'Today'
-                          : `${Math.abs(appleKeyDays ?? 0)}d ago`}
-                    </div>
-                    <div className="text-[10px] text-muted-foreground">
-                      {appleKeyDays !== null && appleKeyDays > 0
-                        ? 'until expiry'
-                        : 'EXPIRED — renew now'}
-                    </div>
-                  </>
-                ) : (
-                  <div className="text-xs text-muted-foreground">Not configured</div>
-                )}
-              </div>
-
-              {/* Supabase */}
-              <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-                    <Database className="w-3.5 h-3.5" />
-                    Supabase
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
                   </div>
-                  <a
-                    href={SERVICE_LINKS.service_supabase}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-muted-foreground hover:text-foreground"
-                  >
-                    <ExternalLink className="w-3 h-3" />
-                  </a>
-                </div>
-                <div className={`text-lg font-bold ${getHealthColor(dbRatio)}`}>
-                  {dbSizeMb} MB
-                </div>
-                <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden">
-                  <div
-                    className={`h-full rounded-full transition-all ${getBarColor(dbRatio)}`}
-                    style={{ width: `${Math.min(dbRatio * 100, 100)}%` }}
+
+                  {/* DB Size — auto */}
+                  <UsageBar
+                    label="Database"
+                    used={dbSizeMb}
+                    limit={dbLimitMb}
+                    unit="MB"
+                    auto
+                  />
+
+                  {/* Bandwidth — manual */}
+                  <UsageBar
+                    label="Bandwidth"
+                    used={(supabaseConfig?.bandwidth_used_gb as number) ?? null}
+                    limit={(supabaseConfig?.bandwidth_limit_gb as number) ?? 5}
+                    unit="GB"
+                  />
+
+                  {/* Edge Function Invocations — auto estimate */}
+                  <UsageBar
+                    label="Edge Functions"
+                    used={systemMetrics?.edge_fn_calls_month ?? 0}
+                    limit={(supabaseConfig?.edge_invocations_limit as number) ?? 500000}
+                    unit=""
+                    auto
+                    formatValue={(v) => v.toLocaleString()}
+                    formatLimit={(v) => `${(v / 1000).toFixed(0)}K`}
+                    note="rate-limited calls only"
+                  />
+
+                  {/* Auth MAUs — auto */}
+                  <UsageBar
+                    label="Auth MAUs"
+                    used={systemMetrics?.total_users ?? 0}
+                    limit={(supabaseConfig?.auth_mau_limit as number) ?? 50000}
+                    unit=""
+                    auto
+                    formatValue={(v) => v.toLocaleString()}
+                    formatLimit={(v) => `${(v / 1000).toFixed(0)}K`}
                   />
                 </div>
-                <div className="text-[10px] text-muted-foreground">
-                  {supabaseConfig?.plan as string ?? 'Free'} — {dbLimitMb} MB limit
+
+                {/* Cloudflare R2 */}
+                <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                      <HardDrive className="w-3.5 h-3.5" />
+                      Cloudflare R2
+                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                        {r2Config?.plan as string ?? 'Free'}
+                      </Badge>
+                    </div>
+                  </div>
+
+                  {/* Storage — auto estimate */}
+                  <UsageBar
+                    label="Storage"
+                    used={r2StorageGb}
+                    limit={r2LimitGb}
+                    unit="GB"
+                    auto
+                    formatValue={(v) => v.toFixed(2)}
+                    note={systemMetrics ? `${systemMetrics.total_photos} photos` : undefined}
+                  />
+
+                  {/* Class A Operations — manual */}
+                  <UsageBar
+                    label="Class A Ops (PUT/LIST)"
+                    used={(r2Config?.class_a_ops_used as number) ?? null}
+                    limit={(r2Config?.class_a_ops_limit as number) ?? 1000000}
+                    unit="/mo"
+                    formatValue={(v) => `${(v / 1000).toFixed(0)}K`}
+                    formatLimit={(v) => `${(v / 1000000).toFixed(0)}M`}
+                  />
+
+                  {/* Class B Operations — manual */}
+                  <UsageBar
+                    label="Class B Ops (GET)"
+                    used={(r2Config?.class_b_ops_used as number) ?? null}
+                    limit={(r2Config?.class_b_ops_limit as number) ?? 10000000}
+                    unit="/mo"
+                    formatValue={(v) => `${(v / 1000).toFixed(0)}K`}
+                    formatLimit={(v) => `${(v / 1000000).toFixed(0)}M`}
+                  />
+
+                  <div className="text-[10px] text-green-400">
+                    Egress: Free (no charges)
+                  </div>
                 </div>
               </div>
 
-              {/* Cloudflare R2 */}
-              <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2">
-                <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-                  <HardDrive className="w-3.5 h-3.5" />
-                  Cloudflare R2
+              {/* Row 2: Apple Cert + Sentry + PostHog */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                {/* Apple Cert */}
+                <div
+                  className={`rounded-lg border p-4 space-y-2 ${
+                    appleKeyDays !== null
+                      ? getKeyBgColor(appleKeyDays)
+                      : 'bg-muted/30 border-border'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                    <Key className="w-3.5 h-3.5" />
+                    Apple Cert
+                  </div>
+                  {appleConfig?.expires_at ? (
+                    <>
+                      <div
+                        className={`text-lg font-bold ${
+                          appleKeyDays !== null
+                            ? getKeyStatusColor(appleKeyDays)
+                            : ''
+                        }`}
+                      >
+                        {appleKeyDays !== null && appleKeyDays > 0
+                          ? `${appleKeyDays}d`
+                          : appleKeyDays === 0
+                            ? 'Today'
+                            : `${Math.abs(appleKeyDays ?? 0)}d ago`}
+                      </div>
+                      <div className="text-[10px] text-muted-foreground">
+                        {appleKeyDays !== null && appleKeyDays > 0
+                          ? 'until expiry'
+                          : 'EXPIRED — renew now'}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-xs text-muted-foreground">Not configured</div>
+                  )}
                 </div>
-                <div className={`text-lg font-bold ${getHealthColor(r2Ratio)}`}>
-                  {formatBytes(totalStorageBytes)}
-                </div>
-                <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden">
-                  <div
-                    className={`h-full rounded-full transition-all ${getBarColor(r2Ratio)}`}
-                    style={{ width: `${Math.min(r2Ratio * 100, 100)}%` }}
+
+                {/* Sentry */}
+                <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                      <Bug className="w-3.5 h-3.5" />
+                      Sentry
+                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                        {sentryConfig?.plan as string ?? 'Developer'}
+                      </Badge>
+                    </div>
+                    <a
+                      href={SERVICE_LINKS.service_sentry}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-muted-foreground hover:text-foreground"
+                    >
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  </div>
+                  <UsageBar
+                    label="Events"
+                    used={(sentryConfig?.events_used as number) ?? null}
+                    limit={(sentryConfig?.events_limit_monthly as number) ?? 5000}
+                    unit="/mo"
+                    formatValue={(v) => v.toLocaleString()}
+                    formatLimit={(v) => `${(v / 1000).toFixed(0)}K`}
                   />
                 </div>
-                <div className="text-[10px] text-muted-foreground">
-                  {r2Config?.plan as string ?? 'Free'} — {r2LimitGb} GB limit
-                  {systemMetrics ? ` · ${systemMetrics.total_photos} photos` : ''}
-                </div>
-              </div>
 
-              {/* Sentry */}
-              <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-                    <Bug className="w-3.5 h-3.5" />
-                    Sentry
+                {/* PostHog */}
+                <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                      <BarChart3 className="w-3.5 h-3.5" />
+                      PostHog
+                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                        {posthogConfig?.plan as string ?? 'Free'}
+                      </Badge>
+                    </div>
+                    <a
+                      href={SERVICE_LINKS.service_posthog}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-muted-foreground hover:text-foreground"
+                    >
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
                   </div>
-                  <a
-                    href={SERVICE_LINKS.service_sentry}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-muted-foreground hover:text-foreground"
-                  >
-                    <ExternalLink className="w-3 h-3" />
-                  </a>
-                </div>
-                <div className="text-lg font-bold text-muted-foreground">—</div>
-                <div className="text-[10px] text-muted-foreground">
-                  {sentryConfig?.plan as string ?? 'Developer'} —{' '}
-                  {((sentryConfig?.events_limit_monthly as number) ?? 5000).toLocaleString()} events/mo
-                </div>
-              </div>
-
-              {/* PostHog */}
-              <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-                    <BarChart3 className="w-3.5 h-3.5" />
-                    PostHog
-                  </div>
-                  <a
-                    href={SERVICE_LINKS.service_posthog}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-muted-foreground hover:text-foreground"
-                  >
-                    <ExternalLink className="w-3 h-3" />
-                  </a>
-                </div>
-                <div className="text-lg font-bold text-muted-foreground">—</div>
-                <div className="text-[10px] text-muted-foreground">
-                  {posthogConfig?.plan as string ?? 'Free'} —{' '}
-                  {((posthogConfig?.events_limit_monthly as number) ?? 1000000).toLocaleString()} events/mo
+                  <UsageBar
+                    label="Events"
+                    used={(posthogConfig?.events_used as number) ?? null}
+                    limit={(posthogConfig?.events_limit_monthly as number) ?? 1000000}
+                    unit="/mo"
+                    formatValue={(v) => v.toLocaleString()}
+                    formatLimit={(v) => `${(v / 1000000).toFixed(0)}M`}
+                  />
+                  <UsageBar
+                    label="Session Replays"
+                    used={(posthogConfig?.sessions_used as number) ?? null}
+                    limit={(posthogConfig?.sessions_limit_monthly as number) ?? 5000}
+                    unit="/mo"
+                    formatValue={(v) => v.toLocaleString()}
+                    formatLimit={(v) => `${(v / 1000).toFixed(0)}K`}
+                  />
                 </div>
               </div>
             </div>
@@ -918,6 +1072,9 @@ export function OverviewPage({
                 <Database className="w-3.5 h-3.5" />
                 Supabase
               </h4>
+              <p className="text-[10px] text-muted-foreground">
+                DB size and Auth MAUs are auto-calculated. Update bandwidth after checking the Supabase dashboard.
+              </p>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <Label className="text-xs">Plan</Label>
@@ -944,6 +1101,68 @@ export function OverviewPage({
                     className="mt-1"
                   />
                 </div>
+                <div>
+                  <Label className="text-xs">Bandwidth Limit (GB)</Label>
+                  <Input
+                    type="number"
+                    value={(configForm.service_supabase?.bandwidth_limit_gb as number) ?? 5}
+                    onChange={(e) =>
+                      updateConfigField(
+                        'service_supabase',
+                        'bandwidth_limit_gb',
+                        parseFloat(e.target.value) || 5
+                      )
+                    }
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">Bandwidth Used (GB)</Label>
+                  <Input
+                    type="number"
+                    step="0.1"
+                    placeholder="Check dashboard"
+                    value={(configForm.service_supabase?.bandwidth_used_gb as number) ?? ''}
+                    onChange={(e) =>
+                      updateConfigField(
+                        'service_supabase',
+                        'bandwidth_used_gb',
+                        e.target.value ? parseFloat(e.target.value) : null
+                      )
+                    }
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">Edge Fn Limit</Label>
+                  <Input
+                    type="number"
+                    value={(configForm.service_supabase?.edge_invocations_limit as number) ?? 500000}
+                    onChange={(e) =>
+                      updateConfigField(
+                        'service_supabase',
+                        'edge_invocations_limit',
+                        parseInt(e.target.value) || 500000
+                      )
+                    }
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">Auth MAU Limit</Label>
+                  <Input
+                    type="number"
+                    value={(configForm.service_supabase?.auth_mau_limit as number) ?? 50000}
+                    onChange={(e) =>
+                      updateConfigField(
+                        'service_supabase',
+                        'auth_mau_limit',
+                        parseInt(e.target.value) || 50000
+                      )
+                    }
+                    className="mt-1"
+                  />
+                </div>
               </div>
             </div>
 
@@ -953,6 +1172,9 @@ export function OverviewPage({
                 <HardDrive className="w-3.5 h-3.5" />
                 Cloudflare R2
               </h4>
+              <p className="text-[10px] text-muted-foreground">
+                Storage is auto-estimated from photo counts. Update Class A/B ops after checking Cloudflare dashboard.
+              </p>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <Label className="text-xs">Plan</Label>
@@ -979,6 +1201,68 @@ export function OverviewPage({
                     className="mt-1"
                   />
                 </div>
+                <div>
+                  <Label className="text-xs">Class A Ops Limit</Label>
+                  <Input
+                    type="number"
+                    value={(configForm.service_cloudflare_r2?.class_a_ops_limit as number) ?? 1000000}
+                    onChange={(e) =>
+                      updateConfigField(
+                        'service_cloudflare_r2',
+                        'class_a_ops_limit',
+                        parseInt(e.target.value) || 1000000
+                      )
+                    }
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">Class A Ops Used</Label>
+                  <Input
+                    type="number"
+                    placeholder="Check dashboard"
+                    value={(configForm.service_cloudflare_r2?.class_a_ops_used as number) ?? ''}
+                    onChange={(e) =>
+                      updateConfigField(
+                        'service_cloudflare_r2',
+                        'class_a_ops_used',
+                        e.target.value ? parseInt(e.target.value) : null
+                      )
+                    }
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">Class B Ops Limit</Label>
+                  <Input
+                    type="number"
+                    value={(configForm.service_cloudflare_r2?.class_b_ops_limit as number) ?? 10000000}
+                    onChange={(e) =>
+                      updateConfigField(
+                        'service_cloudflare_r2',
+                        'class_b_ops_limit',
+                        parseInt(e.target.value) || 10000000
+                      )
+                    }
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">Class B Ops Used</Label>
+                  <Input
+                    type="number"
+                    placeholder="Check dashboard"
+                    value={(configForm.service_cloudflare_r2?.class_b_ops_used as number) ?? ''}
+                    onChange={(e) =>
+                      updateConfigField(
+                        'service_cloudflare_r2',
+                        'class_b_ops_used',
+                        e.target.value ? parseInt(e.target.value) : null
+                      )
+                    }
+                    className="mt-1"
+                  />
+                </div>
               </div>
             </div>
 
@@ -988,6 +1272,9 @@ export function OverviewPage({
                 <Bug className="w-3.5 h-3.5" />
                 Sentry
               </h4>
+              <p className="text-[10px] text-muted-foreground">
+                Update event count after checking Sentry dashboard.
+              </p>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <Label className="text-xs">Plan</Label>
@@ -1014,6 +1301,22 @@ export function OverviewPage({
                     className="mt-1"
                   />
                 </div>
+                <div>
+                  <Label className="text-xs">Events Used</Label>
+                  <Input
+                    type="number"
+                    placeholder="Check dashboard"
+                    value={(configForm.service_sentry?.events_used as number) ?? ''}
+                    onChange={(e) =>
+                      updateConfigField(
+                        'service_sentry',
+                        'events_used',
+                        e.target.value ? parseInt(e.target.value) : null
+                      )
+                    }
+                    className="mt-1"
+                  />
+                </div>
               </div>
             </div>
 
@@ -1023,6 +1326,9 @@ export function OverviewPage({
                 <BarChart3 className="w-3.5 h-3.5" />
                 PostHog
               </h4>
+              <p className="text-[10px] text-muted-foreground">
+                Update event and session replay counts after checking PostHog dashboard.
+              </p>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <Label className="text-xs">Plan</Label>
@@ -1046,6 +1352,55 @@ export function OverviewPage({
                         'service_posthog',
                         'events_limit_monthly',
                         parseInt(e.target.value) || 1000000
+                      )
+                    }
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">Events Used</Label>
+                  <Input
+                    type="number"
+                    placeholder="Check dashboard"
+                    value={(configForm.service_posthog?.events_used as number) ?? ''}
+                    onChange={(e) =>
+                      updateConfigField(
+                        'service_posthog',
+                        'events_used',
+                        e.target.value ? parseInt(e.target.value) : null
+                      )
+                    }
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">Session Replay Limit</Label>
+                  <Input
+                    type="number"
+                    value={
+                      (configForm.service_posthog?.sessions_limit_monthly as number) ?? 5000
+                    }
+                    onChange={(e) =>
+                      updateConfigField(
+                        'service_posthog',
+                        'sessions_limit_monthly',
+                        parseInt(e.target.value) || 5000
+                      )
+                    }
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">Sessions Used</Label>
+                  <Input
+                    type="number"
+                    placeholder="Check dashboard"
+                    value={(configForm.service_posthog?.sessions_used as number) ?? ''}
+                    onChange={(e) =>
+                      updateConfigField(
+                        'service_posthog',
+                        'sessions_used',
+                        e.target.value ? parseInt(e.target.value) : null
                       )
                     }
                     className="mt-1"
